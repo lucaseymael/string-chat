@@ -21,6 +21,8 @@ const files = new Map([
   ['/friends-ui.js', ['friends-ui.js', 'text/javascript; charset=utf-8']],
   ['/rtc.js', ['rtc.js', 'text/javascript; charset=utf-8']],
   ['/microphone.js', ['microphone.js', 'text/javascript; charset=utf-8']],
+  ...['voice-dsp.js','voice-worklet.js','voice-ui.js','call-extras.js'].map(name=>['/'+name,[name,'text/javascript; charset=utf-8']]),
+  ['/voice-ui.css',['voice-ui.css','text/css; charset=utf-8']],
   ['/system-audio.js', ['system-audio.js', 'text/javascript; charset=utf-8']],
   ['/system-audio-worklet.js', ['system-audio-worklet.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],

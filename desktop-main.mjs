@@ -1,3 +1,5 @@
+import { cleanVoicePreferences } from './call-extras.js';
+import { normalizeVoiceSettings } from './voice-dsp.js';
 import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, dialog, session, globalShortcut, Tray, nativeTheme } from 'electron';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -96,6 +98,7 @@ async function start() {
     if (!trusted(event) || !value || typeof value !== 'object') throw new Error('Preferências inválidas.');
     const allowed = ['closeToTray','theme','name','muteShortcut','deafenShortcut', 'cameraDeviceId', 'bitrate', 'fps', 'resolution', 'contentHint', 'streamPriority', 'noiseMode', 'echoCancellation', 'screenSound','screenVolume','soundsEnabled','soundVolume', 'network', 'iceUrl', 'iceUser'];
     const nextSettings = Object.fromEntries(allowed.filter(key => typeof value[key] === 'string' || typeof value[key] === 'number' || typeof value[key] === 'boolean').map(key => [key, typeof value[key] === 'string' ? value[key].slice(0, 250) : value[key]]));
+    Object.assign(nextSettings,normalizeVoiceSettings(value));nextSettings.voicePreferences=JSON.stringify(cleanVoicePreferences(value.voicePreferences));
     const previous=settings;const oldShortcuts=shortcuts.current;
     const nextKeys={mute:value.muteShortcut??DEFAULT_SHORTCUTS.mute,deafen:value.deafenShortcut??DEFAULT_SHORTCUTS.deafen};
     const changed=nextKeys.mute!==(settings.muteShortcut??DEFAULT_SHORTCUTS.mute)||nextKeys.deafen!==(settings.deafenShortcut??DEFAULT_SHORTCUTS.deafen);

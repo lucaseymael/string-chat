@@ -1,10 +1,10 @@
-# String Chat 1.5 — amigos, conversas privadas e grupos
+# String Chat 1.6 — amigos, conversas privadas e grupos
 
-**Atualizem os dois computadores para a versão 1.5.0.** Fechem a versão antiga antes de abrir o novo programa.
+**Atualizem os dois computadores para a versão 1.6.0.** Fechem a versão antiga antes de abrir o novo programa.
 
 ## Instalar e atualizar
 
-Execute **StringChat-Setup-1.5.0.exe** em todos os PCs da chamada. O setup verifica o pacote, fecha o app instalado, instala a versão nova e só depois remove as versões anteriores reconhecidas. O perfil e as conversas salvas são preservados. Reexecutar o setup da mesma versão repara arquivos. O programa passa a aparecer em **Aplicativos instalados** do Windows para desinstalar.
+Execute **StringChat-Setup-1.6.0.exe** em todos os PCs da chamada. O setup verifica o pacote, fecha o app instalado, instala a versão nova e só depois remove as versões anteriores reconhecidas. O perfil e as conversas salvas são preservados. Reexecutar o setup da mesma versão repara arquivos. O programa passa a aparecer em **Aplicativos instalados** do Windows para desinstalar.
 
 As próximas atualizações usam o mesmo processo: abra o setup novo. O launcher e os atalhos apontam para a versão instalada atual. A limpeza é das versões instaladas reconhecidas; cópias portáteis guardadas em outras pastas não são apagadas. Se você tinha fixado um executável antigo na barra de tarefas, fixe o novo atalho String Chat após esta migração.
 
@@ -118,4 +118,11 @@ FPS e bitrate reais dependem da rede e do hardware. A 25 Mbps para três amigos,
 
 ## Atualizar o programa
 
-Feche a versão antiga e execute **StringChat-Setup-1.5.0.exe** nos dois PCs para usar as mensagens privadas. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
+Feche a versão antiga e execute **StringChat-Setup-1.6.0.exe** nos dois PCs para usar as mensagens privadas. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
+
+
+## Voz e conversas na versão 1.6
+
+Em Configurações → Voz e dispositivos, escolha o microfone, ganho, redução de graves e sensibilidade. Ouvir teste permite conferir o resultado antes de salvar. O filtro é RNNoise local. Desative a detecção de voz se ela cortar alguma palavra e reduza o ganho se houver aviso de picos.
+
+Nos cartões da call, regule o volume ou silencie uma pessoa apenas para você. O som da tela tem controle independente. Canais e DMs têm busca no histórico carregado (Ctrl+F), inclusive sem acentos e por nome do anexo. Canais mostram contadores de não lidas.

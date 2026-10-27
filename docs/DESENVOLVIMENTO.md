@@ -18,7 +18,7 @@ Use Windows x64, Node.js 22.12+ e `npm ci`. O Electron é baixado da distribuiç
 Exemplo com GitHub CLI autenticado, depois de enviar o commit:
 
 ```powershell
-gh release create v1.5.0 dist/StringChat-Setup-1.5.0.exe dist/StringChat-Desktop.zip dist/StringChat-SHA256.txt --title 'String Chat 1.5.0' --notes-file docs/NOTAS-1.5.0.md --target main
+gh release create v1.6.0 dist/StringChat-Setup-1.6.0.exe dist/StringChat-Desktop.zip dist/StringChat-SHA256.txt --title 'String Chat 1.6.0' --notes-file docs/NOTAS-1.6.0.md --target main
 ```
 
 O workflow **Windows package** pode ser iniciado manualmente em Actions. Ele gera artefatos e não publica nem instala o app em PCs de usuários. Execuções em repositórios privados podem consumir a franquia da conta conforme o uso.

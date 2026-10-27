@@ -6,11 +6,13 @@ Aplicativo desktop para Windows: amigos, mensagens privadas, grupos com canais d
 
 ## Instalar
 
-Na página **Releases** deste repositório, baixe `StringChat-Setup-1.5.0.exe` e execute em todos os PCs. O setup inclui o runtime; quem usa o programa não precisa instalar Node.js. Atualizações são feitas executando o novo setup, que preserva o perfil e remove versões instaladas anteriores reconhecidas após concluir a instalação.
+Na página **Releases** deste repositório, baixe `StringChat-Setup-1.6.0.exe` e execute em todos os PCs. O setup inclui o runtime; quem usa o programa não precisa instalar Node.js. Atualizações são feitas executando o novo setup, que preserva o perfil e remove versões instaladas anteriores reconhecidas após concluir a instalação.
 
 `StringChat-Desktop.zip` é a alternativa portátil: extraia todos os arquivos juntos e abra `StringChat.exe`. Não há atualização automática pela internet nesta versão.
 
 Veja o [guia de uso](docs/COMO-USAR.md) e as [notas da versão 1.5.0](docs/NOTAS-1.5.0.md).
+
+Veja também a [análise de recursos e implementação independente](docs/ANALISE-RECURSOS.md) e as [novidades da versão 1.6.0](docs/NOTAS-1.6.0.md).
 
 ## Recursos
 
@@ -43,6 +45,8 @@ npm run check
 npm test
 npm start
 ```
+
+`npm run test:desktop` executa os testes de voz, busca e chamadas com dois perfis isolados e áudio sintético no Windows. Exige uma interface LAN/Radmin disponível e não usa amigos ou conversas do perfil instalado. Resultados ficam em `.test-results/`.
 
 `npm start` compila o auxiliar de áudio e abre o Electron na própria janela. O serviço HTTP local é interno ao programa.
 

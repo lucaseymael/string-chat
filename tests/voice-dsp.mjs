@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { VoiceGate, normalizeVoiceSettings } from '../voice-dsp.js';
+import { cleanVoicePreferences } from '../call-extras.js';
+const gate = new VoiceGate(), output = new Float32Array(128);
+const feed = (amplitude, blocks, probability) => { const input = Float32Array.from({ length: 128 }, (_, i) => Math.sin(i * 0.2) * amplitude); for (let i = 0; i < blocks; i++) { if (probability !== undefined) gate.voice(probability); gate.process(input, output); } return Math.sqrt(output.reduce((n, v) => n + v * v, 0) / output.length); };
+assert.equal(feed(0.0002, 200, 0.01), 0); console.log('PASS quiet residual noise stays gated');
+assert(feed(0.08, 20, 0.9) > 0.04); assert(gate.stats.speaking); console.log('PASS detected voice opens promptly without extra audio buffering');
+feed(0.0002, 400, 0.01); assert(gate.stats.outputDb < -90); console.log('PASS release closes smoothly after speech');
+gate.configure({ voiceGate: false, micGain: 200 }); feed(0.8, 80); assert([...output].every(v => Number.isFinite(v) && Math.abs(v) < 0.981)); console.log('PASS boost limiter prevents clipping beyond full scale');
+gate.configure({ voiceGate: false, micGain: 0 }); assert.equal(feed(0.8, 20), 0); console.log('PASS zero microphone gain sends silence');
+gate.configure({ voiceGate: true, voiceAutoThreshold: false, voiceThreshold: -30, micGain: 100 }); feed(0, 400); assert(feed(0.001, 80) < 0.000001); assert(feed(0.1, 40) > 0.04); console.log('PASS manual threshold separates quiet noise from speech level');
+const normalized = normalizeVoiceSettings({ micGain: Infinity, voiceThreshold: -200, micDeviceId: 'x'.repeat(1000) }); assert.equal(normalized.micGain, 100); assert.equal(normalized.voiceThreshold, -75); assert.equal(normalized.micDeviceId.length, 250);
+const id = 'a'.repeat(32); assert.deepEqual(cleanVoicePreferences(JSON.stringify({ [id]: { volume: 999, muted: true }, invalid: { volume: 50 } })), { [id]: { volume: 100, muted: true } }); assert.deepEqual(cleanVoicePreferences('not JSON'), {}); console.log('PASS settings and participant volume persistence reject malformed data');
