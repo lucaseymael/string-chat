@@ -1,0 +1,121 @@
+# String Chat 1.5 — amigos, conversas privadas e grupos
+
+**Atualizem os dois computadores para a versão 1.5.0.** Fechem a versão antiga antes de abrir o novo programa.
+
+## Instalar e atualizar
+
+Execute **StringChat-Setup-1.5.0.exe** em todos os PCs da chamada. O setup verifica o pacote, fecha o app instalado, instala a versão nova e só depois remove as versões anteriores reconhecidas. O perfil e as conversas salvas são preservados. Reexecutar o setup da mesma versão repara arquivos. O programa passa a aparecer em **Aplicativos instalados** do Windows para desinstalar.
+
+As próximas atualizações usam o mesmo processo: abra o setup novo. O launcher e os atalhos apontam para a versão instalada atual. A limpeza é das versões instaladas reconhecidas; cópias portáteis guardadas em outras pastas não são apagadas. Se você tinha fixado um executável antigo na barra de tarefas, fixe o novo atalho String Chat após esta migração.
+
+## Temas, ícone e bandeja
+
+Em **Configurações → Tema do aplicativo**, escolha **Escuro · azul e cinza** ou **Claro · azul e cinza claro** e salve. A escolha permanece ao reabrir. A primeira abertura usa o escuro. Vídeos e imagens mantêm suas cores. O novo ícone é um headset.
+
+O ícone da bandeja oferece **Abrir String Chat**, microfone, áudio recebido e **Sair do String Chat**. O X encerra por padrão. Para manter chamadas e mensagens em segundo plano, ative **Continuar na bandeja ao clicar no X**. Com a opção ligada, use **Sair** na bandeja para encerrar de verdade.
+
+## Atalhos globais
+
+Os padrões são **Ctrl + Shift + M** para mutar/reativar o microfone e **Ctrl + Shift + D** para silenciar/reativar o áudio recebido e pausar/restaurar o microfone. Eles funcionam também com a janela em segundo plano ou minimizada.
+
+Em **Configurações → Atalhos de teclado**, clique em **Definir**, pressione a combinação e salve. **Remover** desativa esse atalho. Se outro programa já usa a mesma combinação, escolha outra: o app informa o conflito. Os atalhos usam a API [globalShortcut do Electron](https://www.electronjs.org/docs/latest/api/global-shortcut).
+
+## Som, atraso e resolução
+
+- O padrão prioriza manter a resolução. Em **Se a conexão ficar limitada**, você pode escolher manter fluidez e permitir reduzir resolução.
+- O bitrate continua em até **25 Mbps por espectador** por padrão, ajustável até **50 Mbps**. Não é uma taxa constante: cenas paradas podem usar menos.
+- As trilhas de áudio têm prioridade sobre o vídeo. As estatísticas mostram codec, filas de áudio/vídeo e custo de codificação.
+- Se uma fonte ficar sem som, confira o volume enviado, o volume do player e o estado de áudio. Use **Recuperar áudio** no player local; falhas transitórias também recebem tentativa automática de recuperação.
+- O som dos apps continua separado do microfone e exclui o áudio do próprio String Chat. Quando o Windows não oferece a captura segura, o app informa a limitação.
+- Em **Ajuda → Salvar diagnóstico deste PC**, salve um relatório para relatar uma falha. Não inclui o conteúdo de conversas nem códigos de convite.
+
+## Sua página inicial
+
+O programa abre em **Amigos**, sem entrar ou criar grupo. Canais, participantes e controles da call aparecem apenas quando você cria ou entra em um grupo. A página inicial também é usada nas próximas aberturas; grupos não são reconectados automaticamente ao reiniciar.
+
+## Conversar em privado
+
+1. Em **Adicionar amigo**, envie seu código ou cole o código do amigo. O outro usuário precisa aceitar o pedido.
+2. Em **Amigos**, clique em **Conversar**, ou escolha o contato na lista **Mensagens diretas**.
+3. Envie texto, emojis, imagens, GIFs ou arquivos de até **8 MB**. Clique numa imagem para ampliar e use **Salvar** para guardar o arquivo.
+4. **Entregue** significa que o programa do amigo confirmou o recebimento. Quando o amigo está offline, aparece **Não entregue**; clique em **Tentar novamente** quando ele voltar. Não há um servidor guardando mensagens para entrega automática.
+
+As conversas privadas não passam pelo criador nem pelos participantes dos grupos. Cada amizade usa uma chave própria para proteger as mensagens durante o envio. O histórico é salvo localmente nos dois PCs; os arquivos e o histórico privado ficam separados dos grupos. O armazenamento local não recebe criptografia adicional em disco.
+
+Os dois precisam estar com o String Chat aberto na mesma rede Radmin/LAN para entregar novas mensagens. O histórico já recebido pode ser lido com o amigo offline. A indicação **Entregue** não é uma confirmação de leitura.
+
+Você pode abrir uma conversa privada enquanto continua na call de um grupo. Uma faixa indica a chamada ativa e oferece **Ver chamada**, microfone, câmera e **Sair da voz**. Voltar para Amigos não desconecta a chamada. Uma nova abertura do programa sempre começa sem call.
+
+O histórico privado conserva até 200 mensagens por conversa, com limite global de 2.000 mensagens e 128 MB em anexos privados. Mensagens e anexos mais antigos são removidos ao atingir esses limites.
+
+## Criar e entrar no grupo
+
+1. Abram o **Radmin VPN** e entrem na mesma rede.
+2. No String Chat, clique em **Convidar amigos**, escolha o nome do grupo e confirme **Criar grupo e copiar convite**. A rede Radmin é selecionada automaticamente quando detectada.
+3. Envie o link copiado para todos os amigos. O mesmo convite serve para o grupo inteiro; não há mais códigos de resposta.
+4. O amigo clica no link para abrir o programa e entrar, ou usa **Entrar em um grupo** e cola o convite.
+5. Depois que o grupo existe, **Convidar amigos** copia o convite em um clique.
+
+O criador precisa manter o programa aberto. Se o Windows perguntar, permita o String Chat no Firewall para a rede usada pelo Radmin. Não é necessário desativar o Firewall nem contratar hospedagem.
+
+## Canais e chamada
+
+- Clique em um **canal de texto** para abrir o chat na área principal.
+- Clique em um **canal de voz** para entrar e expandir a call e as transmissões desse canal.
+- O criador pode adicionar canais nos botões **+** das listas de texto e voz.
+- O botão de desligar a call sai **só da voz**: você continua no grupo e pode conversar por texto.
+- **Sair do grupo** fica abaixo do nome do grupo. Se o criador sair, o grupo fica indisponível até ele abri-lo novamente.
+
+Os canais têm áudio separado. Quem está em outro canal de voz não recebe o microfone ou a tela do seu canal. Até seis pessoas podem estar no grupo, com até 24 canais.
+
+## Webcam e foto de perfil
+
+- No canal de voz, clique no **botão de câmera**, ao lado dos controles de áudio. Na primeira vez, confirme **Permitir câmera**. Clique novamente para desligar.
+- A webcam funciona junto com a tela: vídeo separado em até **720p30**, com limite de **3 Mbps por amigo**, além do bitrate da tela. Ela só é enviada ao seu canal de voz. Sair da voz desliga a webcam.
+- Em **Configurações → Webcam**, escolha o dispositivo se tiver mais de uma câmera. A prévia local é espelhada; seus amigos recebem a imagem sem espelhar.
+- Para mudar a foto, abra **Configurações → Escolher foto**, selecione a imagem e clique em **Salvar configurações**. O centro da imagem é recortado para uma foto quadrada e estática. **Remover** volta às iniciais após salvar.
+- A foto fica salva no PC e aparece nos participantes, mensagens e amigos. A câmera sempre inicia desligada ao abrir o programa.
+
+## Tela e volumes
+
+Escolha **Compartilhar tela** e confirme uma tela ou janela no seletor do programa. A meta continua sendo **1080p60**, com **25 Mbps por amigo** como padrão e ajuste até **50 Mbps**.
+
+Quem assiste pode regular o **volume de cada transmissão no próprio player**, sem alterar as vozes. Quem transmite pode mudar **Volume enviado na transmissão** nas configurações, alterando o som que todos recebem.
+
+O vídeo usa toda a área disponível sem uma barra fixa embaixo. Mova o mouse sobre a transmissão para mostrar volume, nome e botão de tela cheia; os controles somem após alguns segundos sem interação. Também podem ser acessados pelo teclado. O modo de tela cheia mantém a proporção da imagem. Ao capturar um monitor que mostra o próprio String Chat, a imagem pode se repetir porque o aplicativo está sendo capturado. Para evitar esse efeito, selecione a janela do jogo/vídeo, outro monitor ou deixe o app fora da área capturada.
+
+O Windows exclui o som do próprio String Chat da captura dos outros aplicativos, evitando devolver as vozes da call e os sons de notificação no áudio da tela. Se essa exclusão não estiver disponível, a imagem continua e o áudio do sistema é bloqueado, com aviso. Use fones para evitar retorno acústico pelo microfone.
+
+## Imagens, GIFs, arquivos e emojis
+
+As imagens aparecem sem moldura. Clique na imagem para abrir a visualização ampliada. Use **Ampliar** ou clique na foto para alternar o zoom, **Salvar** para baixar e **Esc**, **×** ou o fundo para fechar. GIFs continuam animados.
+
+- **+** no chat: enviar imagem ou arquivo de até **8 MB**.
+- **GIF**: escolher e enviar um GIF animado do PC.
+- **☺**: abrir a seleção de emojis.
+- Também pode arrastar um arquivo para o chat ou colar uma imagem com **Ctrl+V**.
+- O botão **Salvar** de um anexo permite escolher onde guardá-lo.
+
+O histórico recente fica no computador do criador: até 200 mensagens e 128 MB de anexos por grupo. Os GIFs são enviados como arquivo; não há busca em catálogo externo.
+
+## Amigos
+
+Abra **Amigos** na barra esquerda. Copie **Meu código de amigo** e envie, ou cole o código recebido para enviar um pedido. A outra pessoa aceita o pedido no mesmo painel.
+
+Os amigos ficam salvos. O painel mostra online/offline e permite **Convidar** para o seu grupo ou **Entrar** no grupo de um amigo online. Os dois precisam estar no programa e com conectividade pela rede Radmin/LAN. O status pode levar alguns segundos para atualizar.
+
+## Sons e microfone
+
+Há sons distintos para cliques, entrada e saída da voz e mensagens recebidas. Nas configurações, ajuste **Sons do programa** ou desative-os.
+
+A supressão **RNNoise neural local** continua disponível, com cancelamento de eco separado e teste do microfone.
+
+## Limites da conexão
+
+O programa usa a interface Radmin/LAN escolhida e não precisa de um serviço hospedado na internet. O computador que criou o grupo coordena os canais, convites, texto e arquivos; a mídia usa WebRTC entre os participantes.
+
+FPS e bitrate reais dependem da rede e do hardware. A 25 Mbps para três amigos, reserve até 75 Mbps de upload mais áudio e protocolos. Consulte **Estatísticas** para ver os valores reais.
+
+## Atualizar o programa
+
+Feche a versão antiga e execute **StringChat-Setup-1.5.0.exe** nos dois PCs para usar as mensagens privadas. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.

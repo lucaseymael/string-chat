@@ -1,0 +1,1 @@
+(() => {try{const theme=window.stringChat.readSettings().theme==='light'?'light':'dark';document.documentElement.dataset.theme=theme;const link=document.getElementById('dark-theme');if(link)link.disabled=theme==='light';}catch{}})();
