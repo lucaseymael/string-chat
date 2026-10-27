@@ -118,7 +118,7 @@ FPS e bitrate reais dependem da rede e do hardware. A 25 Mbps para três amigos,
 
 ## Atualizar o programa
 
-Feche a versão antiga e execute **StringChat-Setup-1.6.1.exe** nos dois PCs para usar as mensagens privadas. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
+Execute **StringChat-Setup-1.7.0.exe** em todos os PCs para usar os novos controles. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
 
 
 ## Voz e conversas na versão 1.6
@@ -133,3 +133,21 @@ Nos cartões da call, regule o volume ou silencie uma pessoa apenas para você. 
 Microfone riscado indica microfone mutado. Fone riscado indica que a pessoa desativou o áudio recebido da chamada; nesse estado o microfone também fica pausado, e os dois ícones aparecem riscados. Os indicadores ficam na lista do canal, nos cartões e na visualização central, e são atualizados para os outros participantes.
 
 Em Amigos ou numa DM, use o botão de fone na faixa da chamada para silenciar ou reativar o áudio. Ao reativar, o microfone retorna à escolha anterior. Silenciar uma pessoa apenas para você, pelo cartão, não muda o status dela para os outros.
+
+## Novos controles de chamada — 1.7
+
+Em **Configurações → Modo de voz e reprodução**:
+
+- Escolha **Pressionar para falar** e **Definir** para gravar sua combinação de teclas. O padrão é F8. Segure para transmitir e solte para fechar, inclusive com o app minimizado. O botão de microfone continua sendo o mute principal. Atalhos de mutar e silenciar áudio devem ser diferentes do PTT.
+- **Avisar quando eu falar com o microfone mutado** mostra um aviso e toca um som se houver fala sustentada. É necessário já ter ativado o mic nesta chamada; o aviso não inicia a captura. O aviso não é usado em PTT ou com a escuta desativada.
+- Selecione o **fone ou alto-falante de saída**. A seleção vale para as vozes, som da tela, teste do mic e sons do app. Se a saída desaparecer, o app tenta voltar ao padrão do Windows.
+- Ative **Baixar a transmissão enquanto alguém fala** e escolha a redução. O volume volta suavemente depois; seu ajuste de volume do player é preservado.
+- **Áudio espacial** libera um controle esquerda/direita no cartão de cada pessoa. Use fones estéreo. O som da tela mantém seus canais estéreo e não é espacializado.
+
+No player de uma transmissão, mova o mouse para ver **Qualidade desta transmissão**. Escolha origem/1080p, 720p, 480p ou somente áudio. Cada pessoa escolhe sua própria qualidade; o limite de bitrate definido por quem transmite continua valendo. Não há aumento artificial de resolução ou FPS acima da captura original. Os dois apps precisam estar na versão 1.7 para confirmar a escolha.
+
+**Recuperar vídeo** tenta retomar a mesma captura sem encerrar a voz ou o som da tela. Uma segunda tentativa pode renegociar VP8 para contornar problemas do codec. Há limites de tentativas para evitar reinicializações contínuas. A recuperação automática atua quando um vídeo visível para de receber quadros; problemas de rede persistentes ainda exigem corrigir a conexão.
+
+Em **Sincronia da transmissão**, deixe **Menor atraso** e **Sem correção** como ponto de partida. Buffer equilibrado/estável pode ajudar redes irregulares, acrescentando atraso. Se o som chega antes da imagem, use uma correção positiva para atrasar o áudio. Se chega depois, use negativa para atrasar a imagem. O ajuste é local, manual e não altera a voz. O buffer é uma preferência do WebRTC, sem garantia de um atraso exato.
+
+**Desfocar o fundo da câmera neste PC** usa MediaPipe e um modelo incluído no instalador, sem enviar quadros a um serviço de processamento. Ative a câmera normalmente depois de salvar. O efeito custa processamento e pode diminuir os FPS da webcam; não muda o FPS configurado para a tela. A segmentação pode falhar nas bordas e não substitui verificar o que aparece na câmera.

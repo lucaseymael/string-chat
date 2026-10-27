@@ -1,5 +1,5 @@
 using System;using System.IO;using System.Drawing;using System.Windows.Forms;using System.Threading.Tasks;using System.Reflection;using System.Collections.Generic;using System.Diagnostics;
-[assembly:AssemblyTitle("Instalar String Chat")][assembly:AssemblyProduct("String Chat")][assembly:AssemblyVersion("1.6.1.0")]
+[assembly:AssemblyTitle("Instalar String Chat")][assembly:AssemblyProduct("String Chat")][assembly:AssemblyVersion("1.7.0.0")]
 sealed class Setup:Form{
  readonly Button install=new Button(),open=new Button();readonly ProgressBar progress=new ProgressBar();readonly Label status=new Label();readonly CheckBox shortcut=new CheckBox();bool busy;
  Setup(){Text="String Chat Setup";ClientSize=new Size(560,400);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(237,242,249);ForeColor=Color.FromArgb(39,55,79);Font=new Font("Segoe UI",10);Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);

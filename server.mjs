@@ -14,6 +14,7 @@ const files = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/media-policy.js',['media-policy.js','text/javascript; charset=utf-8']],
   ['/shortcuts-ui.js',['shortcuts-ui.js','text/javascript; charset=utf-8']],
+  ['/shortcuts.mjs',['shortcuts.mjs','text/javascript; charset=utf-8']],
   ['/home-ui.js', ['home-ui.js', 'text/javascript; charset=utf-8']],
   ['/home.css', ['home.css', 'text/css; charset=utf-8']],
   ['/profile.js', ['profile.js', 'text/javascript; charset=utf-8']],
@@ -21,12 +22,13 @@ const files = new Map([
   ['/friends-ui.js', ['friends-ui.js', 'text/javascript; charset=utf-8']],
   ['/rtc.js', ['rtc.js', 'text/javascript; charset=utf-8']],
   ['/microphone.js', ['microphone.js', 'text/javascript; charset=utf-8']],
-  ...['voice-dsp.js','voice-worklet.js','voice-ui.js','call-extras.js','voice-state.js'].map(name=>['/'+name,[name,'text/javascript; charset=utf-8']]),
+  ...['voice-dsp.js','voice-worklet.js','voice-ui.js','call-extras.js','voice-state.js','advanced-settings.js','advanced-ui.js','advanced-call.js','playback.js','camera-worker.js','camera-effects.js','rtc-controls.js'].map(name=>['/'+name,[name,'text/javascript; charset=utf-8']]),
   ['/voice-ui.css',['voice-ui.css','text/css; charset=utf-8']],
   ['/system-audio.js', ['system-audio.js', 'text/javascript; charset=utf-8']],
   ['/system-audio-worklet.js', ['system-audio-worklet.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/theme.css',['theme.css','text/css; charset=utf-8']],
+  ['/appearance.css',['appearance.css','text/css; charset=utf-8']],
   ['/theme-dark.css',['theme-dark.css','text/css; charset=utf-8']],
   ['/theme-boot.js',['theme-boot.js','text/javascript; charset=utf-8']],
   ['/media-ui.css', ['media-ui.css', 'text/css; charset=utf-8']],
@@ -36,6 +38,7 @@ const files = new Map([
   ['/vendor/rnnoise-worklet.js', ['vendor/rnnoise-worklet.js', 'text/javascript; charset=utf-8']],
   ['/vendor/rnnoise.wasm', ['vendor/rnnoise.wasm', 'application/wasm']],
   ['/vendor/rnnoise_simd.wasm', ['vendor/rnnoise_simd.wasm', 'application/wasm']],
+  ...['vision_bundle.js','wasm/vision_wasm_internal.js','wasm/vision_wasm_internal.wasm','wasm/vision_wasm_module_internal.js','wasm/vision_wasm_module_internal.wasm','wasm/vision_wasm_nosimd_internal.js','wasm/vision_wasm_nosimd_internal.wasm','selfie_segmenter.tflite'].map(name=>['/vendor/mediapipe/'+name,['vendor/mediapipe/'+name,name.endsWith('.wasm')?'application/wasm':name.endsWith('.js')?'text/javascript; charset=utf-8':'application/octet-stream']]),
   ['/licenses', ['vendor/THIRD-PARTY-LICENSES.txt', 'text/plain; charset=utf-8']]
 ]);
 export async function startLocalServer({ desktopPid = null, port = 0 } = {}) {

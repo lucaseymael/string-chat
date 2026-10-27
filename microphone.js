@@ -24,7 +24,8 @@ export class Microphone extends EventTarget {
   get live() { return !!this.raw?.getAudioTracks().some(track => track.readyState === 'live') && this.track?.readyState === 'live'; }
   async open(settings) {
     try {
-      this.context = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+      try { this.context = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive', sinkId: settings.audioOutputDevice || '' }); }
+      catch { this.context = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' }); }
       await this.context.resume();
       if (this.closed) throw new Error('Microfone cancelado.');
       settings = { ...settings, ...normalizeVoiceSettings(settings) };
@@ -39,7 +40,7 @@ export class Microphone extends EventTarget {
       this.highPass = this.context.createBiquadFilter(); this.highPass.type = 'highpass'; this.highPass.Q.value = 0.707;
       await this.context.audioWorklet.addModule('./voice-worklet.js');
       this.voiceNode = new AudioWorkletNode(this.context, 'stringchat-voice', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1, channelCountMode: 'explicit', processorOptions: settings });
-      this.voiceNode.port.onmessage = event => { this.telemetry = event.data; };
+      this.voiceNode.port.onmessage = event => { this.telemetry = event.data; this.telemetryUpdated=performance.now(); };
       this.voiceNode.addEventListener('processorerror', () => this.dispatchEvent(new CustomEvent('error', { detail: 'O processamento de voz parou. Desligue e ligue o microfone.' })));
       this.destination = this.context.createMediaStreamDestination();
       this.destination.channelCount = 1; this.destination.channelCountMode = 'explicit';
@@ -108,8 +109,9 @@ export class Microphone extends EventTarget {
     })().catch(error => { this.neural?.disconnect(); this.neural?.port.postMessage('destroy'); this.neural = null; this.neuralReady = null; throw error; });
     return this.neuralReady;
   }
+  setPushToTalk(down,leaseMs=800) { this.voiceNode?.port.postMessage({type:'ptt',down:!!down,leaseMs}); }
   setMonitor(enabled) {
-    if (!this.context || this.closed) return;
+    if (!this.context || this.closed || !this.monitor || !this.analyser) return;
     this.monitor.disconnect();
     try { this.analyser.disconnect(this.monitor); } catch { /* Not connected. */ }
     if (enabled) { this.analyser.connect(this.monitor); this.monitor.connect(this.context.destination); this.context.resume().catch(() => {}); }

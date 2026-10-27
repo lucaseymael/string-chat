@@ -3,12 +3,12 @@ export function cleanVoicePreferences(value) {
   const result = {};
   for (const [id, p] of Object.entries(input || {}).slice(0, 64)) {
     if (!/^[a-f0-9]{32}$/.test(id) || !p || typeof p !== 'object') continue;
-    result[id] = { volume: Number.isFinite(p.volume) ? Math.max(0, Math.min(100, p.volume)) : 100, muted: p.muted === true };
+    result[id] = { ...(Number.isFinite(p.pan)?{pan:Math.max(-1,Math.min(1,p.pan))}:{}),volume: Number.isFinite(p.volume) ? Math.max(0, Math.min(100, p.volume)) : 100, muted: p.muted === true };
   }
   return result;
 }
-export function setupCallExtras({ call, settings, audioElements, toast }) {
-  const prefs = cleanVoicePreferences(settings.voicePreferences), meters = new Map(); let context, saveTimer;
+export function setupCallExtras({ call, settings, audioElements, toast, onAudioChange }) {
+  const prefs = cleanVoicePreferences(settings.voicePreferences), meters = new Map(); let context, saveTimer;const speaking=new Set();
   const pref = id => prefs[id] || { volume: 100, muted: false };
   function persist() {
     clearTimeout(saveTimer); saveTimer = setTimeout(async () => {
@@ -26,12 +26,14 @@ export function setupCallExtras({ call, settings, audioElements, toast }) {
       const slider = document.createElement('input'); slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = pref(id).volume; slider.setAttribute('aria-label', 'Volume da voz de ' + call.peers.get(id).name);
       const value = document.createElement('output'); value.textContent = slider.value + '%';
       const refresh = () => { button.textContent = pref(id).muted ? 'Ouvir' : 'Silenciar'; button.setAttribute('aria-pressed', String(pref(id).muted)); };
-      button.onclick = event => { event.stopPropagation(); prefs[id] = { ...pref(id), muted: !pref(id).muted }; const el = audioElements.get(id); if (el) el.muted = call.deafened || !call.voiceChannelId || call.peers.get(id)?.meta.voiceChannelId !== call.voiceChannelId || pref(id).muted; refresh(); persist(); };
-      slider.oninput = event => { event.stopPropagation(); prefs[id] = { ...pref(id), volume: Number(slider.value) }; value.textContent = slider.value + '%'; const el = audioElements.get(id); if (el) el.volume = pref(id).volume / 100; persist(); };
+      button.onclick = event => { event.stopPropagation(); prefs[id] = { ...pref(id), muted: !pref(id).muted }; refresh(); onAudioChange?.(); persist(); };
+      slider.oninput = event => { event.stopPropagation(); prefs[id] = { ...pref(id), volume: Number(slider.value) }; value.textContent = slider.value + '%'; const el = audioElements.get(id); if (el) el.volume = pref(id).volume / 100; onAudioChange?.(); persist(); };
       box.addEventListener('click', event => event.stopPropagation()); box.append(button, slider, value); node.append(box); refresh();
+      if(settings.spatialAudio){const position=document.createElement('input');position.type='range';position.min=-100;position.max=100;position.value=(pref(id).pan||0)*100;position.className='voice-position';position.setAttribute('aria-label','Posição espacial da voz de '+call.peers.get(id).name);position.title='Esquerda · centro · direita';position.oninput=()=>{prefs[id]={...pref(id),pan:Number(position.value)/100};persist();};box.append(position);}
     }
   }
   function tick() {
+    speaking.clear();
     const disconnect = meter => { meter.source.disconnect(); meter.analyser.disconnect(); meter.silence.disconnect(); };
     for (const [id, meter] of meters) if (!call.peers.has(id) || call.peers.get(id).tracks.get(0)?.id !== meter.track || call.peers.get(id).meta.voiceChannelId !== call.voiceChannelId) { disconnect(meter); meters.delete(id); }
     if (!call.active || !call.voiceChannelId) { for (const m of meters.values()) disconnect(m); meters.clear(); if (context) context.close().catch(() => {}); context = null; return; }
@@ -46,10 +48,11 @@ export function setupCallExtras({ call, settings, audioElements, toast }) {
         } catch { continue; }
       }
       const m = meters.get(peer.id); m.analyser.getFloatTimeDomainData(m.data); const rms = Math.sqrt(m.data.reduce((s, v) => s + v * v, 0) / m.data.length);
+      if(peer.meta.mic&&!peer.meta.deafened&&rms>0.008&&!pref(peer.id).muted&&pref(peer.id).volume>0)speaking.add(peer.id);
       for (const node of document.querySelectorAll(`[data-member="${peer.id}"]`)) node.classList.toggle('speaking', peer.meta.mic && rms > 0.008);
     }
   }
-  return { audio, controls, tick };
+  return { audio, controls, tick,pan:id=>pref(id).pan||0,speaking:()=>speaking.size>0 };
 }
 export function setupHistorySearch(list, label) {
   const bar = document.createElement('div'); bar.className = 'message-search';

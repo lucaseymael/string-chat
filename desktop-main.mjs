@@ -1,3 +1,6 @@
+import { KeyMonitor } from './key-monitor.mjs';
+import { normalizeAdvancedSettings } from './advanced-settings.js';
+import { powerMonitor } from 'electron';
 import { cleanVoicePreferences } from './call-extras.js';
 import { normalizeVoiceSettings } from './voice-dsp.js';
 import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, dialog, session, globalShortcut, Tray, nativeTheme } from 'electron';
@@ -13,7 +16,7 @@ import {verifyInstallation} from './installation.mjs';
 import {makeDiagnostics} from './diagnostics.mjs';
 import {release} from 'node:os';
 const isAppLink=value=>typeof value==='string'&&/^(stringchat):\/\//.test(value);
-let shortcuts,tray,trayState={},hiddenToTray=false,trayNoticeShown=false,preparingUpdate=false,shuttingDown=false,shutdownCleaned=false;
+let keyMonitor,shortcuts,tray,trayState={},hiddenToTray=false,trayNoticeShown=false,preparingUpdate=false,shuttingDown=false,shutdownCleaned=false;
 function showMainWindow(){if(!mainWindow||mainWindow.isDestroyed())return;hiddenToTray=false;if(mainWindow.isMinimized())mainWindow.restore();mainWindow.show();mainWindow.focus();}
 function refreshTray(){if(!tray||tray.isDestroyed())return;tray.setToolTip('String Chat'+(trayState.inCall?' · Em chamada':''));tray.setContextMenu(Menu.buildFromTemplate([{label:'Abrir String Chat',click:showMainWindow},{type:'separator'},{label:trayState.mic?'Mutar microfone':'Reativar microfone',enabled:!!trayState.inCall,click:()=>mainWindow?.webContents.send('shortcuts:trigger','mute')},{label:trayState.deafened?'Reativar áudio recebido':'Silenciar áudio recebido',enabled:!!trayState.inCall,click:()=>mainWindow?.webContents.send('shortcuts:trigger','deafen')},{type:'separator'},{label:'Sair do String Chat',click:()=>app.quit()}]));}
 let cameraAuthorized=false;
@@ -56,6 +59,8 @@ async function start() {
   preferencesPath = join(app.getPath('userData'), 'preferences.json');
   try { settings = JSON.parse(await readFile(preferencesPath, 'utf8')); } catch { settings = {}; }
   nativeTheme.themeSource=settings.theme==='light'?'light':'dark';
+  keyMonitor=new KeyMonitor(join(root,'native/PushToTalk.exe'),value=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('ptt:state',value);},message=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('ptt:error',message);});keyMonitor.configure(settings);
+  powerMonitor.on('suspend',()=>keyMonitor.suspend());powerMonitor.on('lock-screen',()=>keyMonitor.suspend());powerMonitor.on('resume',()=>keyMonitor.resume());powerMonitor.on('unlock-screen',()=>keyMonitor.resume());
   shortcuts.apply({mute:settings.muteShortcut??DEFAULT_SHORTCUTS.mute,deafen:settings.deafenShortcut??DEFAULT_SHORTCUTS.deafen});
   localServer = await startLocalServer({ desktopPid: process.pid });
   rooms=new RoomService({statePath:join(app.getPath('userData'),'group.json')});
@@ -70,10 +75,10 @@ async function start() {
   const sameOrigin = value => { try { return new URL(value).origin === origin; } catch { return false; } };
   // No external pages receive media, clipboard, capture or preload privileges.
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    return !(permission==='media' && details?.mediaType==='video' && !cameraAuthorized) && webContents === mainWindow?.webContents && sameOrigin(requestingOrigin) && ['media', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(permission);
+    return !(permission==='media' && details?.mediaType==='video' && !cameraAuthorized) && webContents === mainWindow?.webContents && sameOrigin(requestingOrigin) && ['media', 'speaker-selection', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(permission);
   });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const allowed = webContents === mainWindow?.webContents && webContents.getURL().startsWith(origin + '/') && ['media', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(permission);
+    const allowed = webContents === mainWindow?.webContents && webContents.getURL().startsWith(origin + '/') && ['media', 'speaker-selection', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(permission);
     callback(allowed && !(permission === 'media' && details.mediaTypes?.includes('video') && !cameraAuthorized));
   });
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
@@ -92,15 +97,16 @@ async function start() {
     } catch (error) { console.error('Display capture unavailable:', error.message); if (pendingCapture) finishCapture(null); else callback(null); }
   });
   ipcMain.on('preferences:read', event => { event.returnValue = trusted(event)||trusted(event,pickerWindow) ? settings : {}; });
-  ipcMain.on('tray:state',(event,value)=>{if(!trusted(event)||!value)return;trayState={inCall:value.inCall===true,mic:value.mic===true,deafened:value.deafened===true};refreshTray();});
+  ipcMain.on('tray:state',(event,value)=>{if(!trusted(event)||!value)return;trayState={inCall:value.inCall===true,mic:value.mic===true,deafened:value.deafened===true};keyMonitor.setActive(trayState.inCall);refreshTray();});
   ipcMain.on('identity:read',event=>{event.returnValue=trusted(event)?{id:friends.id}:null;});
   ipcMain.handle('preferences:save', async (event, value) => {
     if (!trusted(event) || !value || typeof value !== 'object') throw new Error('Preferências inválidas.');
     const allowed = ['closeToTray','theme','name','muteShortcut','deafenShortcut', 'cameraDeviceId', 'bitrate', 'fps', 'resolution', 'contentHint', 'streamPriority', 'noiseMode', 'echoCancellation', 'screenSound','screenVolume','soundsEnabled','soundVolume', 'network', 'iceUrl', 'iceUser'];
     const nextSettings = Object.fromEntries(allowed.filter(key => typeof value[key] === 'string' || typeof value[key] === 'number' || typeof value[key] === 'boolean').map(key => [key, typeof value[key] === 'string' ? value[key].slice(0, 250) : value[key]]));
-    Object.assign(nextSettings,normalizeVoiceSettings(value));nextSettings.voicePreferences=JSON.stringify(cleanVoicePreferences(value.voicePreferences));
+    Object.assign(nextSettings,normalizeVoiceSettings(value),normalizeAdvancedSettings(value));nextSettings.voicePreferences=JSON.stringify(cleanVoicePreferences(value.voicePreferences));
     const previous=settings;const oldShortcuts=shortcuts.current;
     const nextKeys={mute:value.muteShortcut??DEFAULT_SHORTCUTS.mute,deafen:value.deafenShortcut??DEFAULT_SHORTCUTS.deafen};
+    if(nextSettings.voiceInputMode==='ptt'&&[nextKeys.mute,nextKeys.deafen].includes(nextSettings.pttShortcut))throw Error('Escolha uma tecla de PTT diferente dos atalhos de mutar e silenciar áudio.');
     const changed=nextKeys.mute!==(settings.muteShortcut??DEFAULT_SHORTCUTS.mute)||nextKeys.deafen!==(settings.deafenShortcut??DEFAULT_SHORTCUTS.deafen);
     shortcuts.apply(nextKeys,{strict:changed});
     settings=nextSettings;settings.muteShortcut=shortcuts.current.mute;settings.deafenShortcut=shortcuts.current.deafen;
@@ -108,13 +114,13 @@ async function start() {
     rooms.setName(settings.name,settings.avatar);
     friends.changed();friends.refresh().catch(()=>{});
     await mkdir(dirname(preferencesPath), { recursive: true });
-    try{await writeFile(preferencesPath+'.tmp',JSON.stringify(settings));await rename(preferencesPath+'.tmp',preferencesPath);}catch(error){settings=previous;shortcuts.apply(oldShortcuts);throw error;}nativeTheme.themeSource=settings.theme==='light'?'light':'dark';return true;
+    try{await writeFile(preferencesPath+'.tmp',JSON.stringify(settings));await rename(preferencesPath+'.tmp',preferencesPath);}catch(error){settings=previous;shortcuts.apply(oldShortcuts);throw error;}nativeTheme.themeSource=settings.theme==='light'?'light':'dark';keyMonitor.configure(settings);return true;
   });
   const roomAction=(name,fn)=>ipcMain.handle(name,(event,value)=>{if(!trusted(event))throw new Error('Acesso inválido.');return fn(value);});
   roomAction('diagnostics:export',async media=>{const report=makeDiagnostics({version:app.getVersion(),electron:process.versions.electron,chrome:process.versions.chrome,osRelease:release(),shortcuts:shortcuts.snapshot(),media});const result=await dialog.showSaveDialog(mainWindow,{title:'Salvar diagnóstico do String Chat',defaultPath:'StringChat-diagnostico.json',filters:[{name:'Diagnóstico JSON',extensions:['json']}]});if(result.canceled||!result.filePath)return false;await writeFile(result.filePath,JSON.stringify(report,null,2));return true;});
   roomAction('shortcuts:status',()=>shortcuts.snapshot());
-  roomAction('shortcuts:suspend',()=>{shortcuts.suspend();return true;});
-  roomAction('shortcuts:resume',()=>shortcuts.resume());
+  roomAction('shortcuts:suspend',()=>{shortcuts.suspend();keyMonitor.suspend();return true;});
+  roomAction('shortcuts:resume',()=>{keyMonitor.resume();return shortcuts.resume();});
   roomAction('camera:authorize',async()=>{
     if(cameraAuthorized)return true;
     const result=await dialog.showMessageBox(mainWindow,{type:'question',title:'Permitir webcam',message:'Permitir que o String Chat use sua câmera?',detail:'A webcam só é ligada pelo botão de câmera. A imagem é enviada às pessoas no seu canal de voz. Você pode desligar a qualquer momento.',buttons:['Permitir câmera','Cancelar'],defaultId:1,cancelId:1,noLink:true});
@@ -170,4 +176,4 @@ async function start() {
   await mainWindow.loadURL(origin + '/');
 }
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {shuttingDown=true;if(shutdownCleaned)return;shutdownCleaned=true;tray?.destroy();finishCapture(null);shortcuts?.close();friends?.close();rooms?.leave();localServer?.close();});
+app.on('before-quit', () => {shuttingDown=true;if(shutdownCleaned)return;shutdownCleaned=true;tray?.destroy();finishCapture(null);shortcuts?.close();keyMonitor?.stop();friends?.close();rooms?.leave();localServer?.close();});

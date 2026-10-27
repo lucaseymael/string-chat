@@ -1,4 +1,8 @@
 import { MeshCall, iceConfig } from './rtc.js';
+import {normalizeAdvancedSettings} from './advanced-settings.js';
+import {setupAdvancedUI} from './advanced-ui.js';
+import {AdvancedCall} from './advanced-call.js';
+import {CameraBlur} from './camera-effects.js';
 import { Microphone } from './microphone.js';
 import { getVoiceState, voiceStateMarkup } from './voice-state.js';
 import { normalizeVoiceSettings } from './voice-dsp.js';
@@ -16,7 +20,7 @@ const defaults = { name: 'Você', bitrate: 25, fps: 60, resolution: 1080, conten
 let stored = {};
 try { stored = window.stringChat?.readSettings() || JSON.parse(localStorage.getItem('stringchat-settings') || '{}') || {}; } catch { /* Storage may be disabled. */ }
 const settings = {
-  ...defaults,...normalizeVoiceSettings(stored),voicePreferences:typeof stored.voicePreferences==='string'?stored.voicePreferences:'{}',closeToTray:stored.closeToTray===true,theme:stored.theme==='light'?'light':'dark',muteShortcut:typeof stored.muteShortcut==='string'?stored.muteShortcut:'Control+Shift+M',deafenShortcut:typeof stored.deafenShortcut==='string'?stored.deafenShortcut:'Control+Shift+D', avatar:cleanAvatar(stored.avatar),cameraDeviceId:typeof stored.cameraDeviceId==='string'?stored.cameraDeviceId:'', name: typeof stored.name === 'string' ? stored.name.slice(0, 32) || 'Você' : defaults.name,
+  ...defaults,...normalizeAdvancedSettings(stored),...normalizeVoiceSettings(stored),voicePreferences:typeof stored.voicePreferences==='string'?stored.voicePreferences:'{}',closeToTray:stored.closeToTray===true,theme:stored.theme==='light'?'light':'dark',muteShortcut:typeof stored.muteShortcut==='string'?stored.muteShortcut:'Control+Shift+M',deafenShortcut:typeof stored.deafenShortcut==='string'?stored.deafenShortcut:'Control+Shift+D', avatar:cleanAvatar(stored.avatar),cameraDeviceId:typeof stored.cameraDeviceId==='string'?stored.cameraDeviceId:'', name: typeof stored.name === 'string' ? stored.name.slice(0, 32) || 'Você' : defaults.name,
   bitrate: Number.isFinite(stored.bitrate) ? Math.min(50, Math.max(8, stored.bitrate)) : 25,
   fps: stored.fps === 30 ? 30 : 60, resolution: stored.resolution === 720 ? 720 : 1080,
   contentHint: stored.contentHint === 'detail' ? 'detail' : 'motion', echoCancellation: stored.echoCancellation !== false,
@@ -44,6 +48,7 @@ let chatVisible = !smallScreen.matches;
 let microphone = null, microphonePromise = null;
 let systemAudio = null, screenAudioLabel = '',audioRecovery=null,audioFailures=0,audioRecoveryBusy=false,lastAudioError='';
 let pendingShare = null;
+let cameraProcessor=null,pendingCameraProcessor=null;
 let cameraBusy=false,cameraEpoch=0,draftAvatar=settings.avatar,avatarBusy=false;
 let viewerUrl=null,viewerId=null,viewerSave=null,viewerEpoch=0,pageClosing=false;
 const colors = ['#bdcde3','#c7d0e4','#d8cadc','#bfd5df','#d5d4e1'];
@@ -70,13 +75,16 @@ document.querySelectorAll('.close-dialog').forEach(button => button.addEventList
 document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
 
 const voiceUI=setupVoiceUI({settings,getMicrophone:()=>microphone,error:e=>toast(userError(e),true)});
-const callExtras=setupCallExtras({call,settings,audioElements,toast});
+const callExtras=setupCallExtras({call,settings,audioElements,toast,onAudioChange:renderStreams});
+const advancedUI=setupAdvancedUI({settings,error:e=>toast(userError(e),true)});
+const advanced=new AdvancedCall({call,settings,getMicrophone:()=>microphone,ensureMicrophone,callExtras,toast,sounds});
 
 function participantMarkup(member, self = false, status = '') {
   return `<div class="participant-card${self ? ' self' : ''}" data-member="${safe(member.id)}"><span class="participant-mic">${voiceStateMarkup(member)}</span><span class="avatar">${avatarContent(member,safe)}</span><div class="participant-name">${safe(member.name)}${self ? ' <span>(você)</span>' : ''}</div><span class="participant-status">${safe(status || (getVoiceState(member).label + (member.screen ? ' · Compartilhando tela' : '')))}</span></div>`;
 }
 function render() {
   if(pageClosing)return;
+  if(!call.active){cameraProcessor?.close();cameraProcessor=null;pendingCameraProcessor?.close();}
   window.stringChat.updateTray({inCall:call.active&&!!call.voiceChannelId,mic:call.meta.mic,deafened:call.deafened});
   const name = call.meta.name;
   $('self-name').textContent = name; $('self-avatar').innerHTML = avatarContent(call.meta,safe);
@@ -118,7 +126,7 @@ function render() {
   const screenCount = (call.screen ? 1 : 0) + call.connected.filter(p => p.meta.screen).length;
   $('stage-state').textContent = screenCount ? `${screenCount === 1 ? 'TRANSMISSÃO' : 'TRANSMISSÕES'} AO VIVO` : call.connected.length ? 'BOA COMPANHIA, CONEXÃO DIRETA' : 'SEU ESPAÇO, SEM LIMITES';
   $('leave-button').disabled = !call.active && !call.mic && !call.screen && !call.camera;
-  renderStreams(); callExtras.controls(); updateDuration();
+  renderStreams(); callExtras.controls();advanced.observe(); updateDuration();
   home?.updateSession({active:call.active,group:call.room?.name,voice:voice?.name,mic:call.meta.mic,deafened:call.deafened});
   $('room-nav').classList.toggle('selected',call.active&&viewMode!=='home');$('home-button').classList.toggle('selected',viewMode==='home');
   $('toggle-chat').hidden=viewMode==='home';$('invite-button').innerHTML=icon('plus')+(call.active?'Convidar amigos':'Criar grupo');
@@ -163,7 +171,7 @@ function renderStreams() {
         const element = document.createElement('audio'); element.autoplay = true; element.hidden = true;
         document.body.append(element); audioElements.set(peer.id, element);
       }
-      const element = audioElements.get(peer.id); element.muted = call.deafened || !sameVoice || callExtras.audio(peer.id,element); setMedia(element, [mic]);
+      const element = audioElements.get(peer.id),localMuted=callExtras.audio(peer.id,element); element.muted=true;setMedia(element,[mic]);advanced.voice(element,peer.id,call.deafened||!sameVoice||localMuted);
     }
   }
   for (const [id, element] of audioElements) if (!call.peers.has(id)) { element.srcObject = null; element.remove(); audioElements.delete(id); }
@@ -180,11 +188,11 @@ function renderStreams() {
     }
     const tile = tiles.get(item.id), video = tile.querySelector('video');
     if(item.kind==='screen'){const hasAudio=item.self?!!call.screenAudio:!!item.audio;let status=tile.querySelector('.stream-audio-status');if(!status){status=document.createElement('span');status.className='stream-audio-status';tile.querySelector('.stream-label').insertBefore(status,tile.querySelector('.stream-fullscreen'));}const sourceVolume=item.self?settings.screenVolume:call.peers.get(item.id)?.meta.screenAudioVolume;status.textContent=hasAudio?(sourceVolume===0?'Volume enviado em 0%':!item.self&&call.deafened?'Áudio recebido silenciado':!item.self&&streamVolumes.get(item.id)===0?'Transmissão silenciada':item.self?'Som dos apps ativo':'Som ativo'):'Sem áudio da tela';status.classList.toggle('audio-missing',!hasAudio);status.title=hasAudio?'Áudio da transmissão separado das vozes':item.self?lastAudioError||'Ative o som ou clique em Recuperar áudio.':'Quem transmite precisa ativar ou recuperar o som.';if(item.self){let retry=tile.querySelector('.recover-screen-audio');if(!retry){retry=document.createElement('button');retry.className='button small recover-screen-audio';retry.textContent='Recuperar áudio';retry.onclick=()=>recoverScreenAudio(true);tile.querySelector('.stream-label').insertBefore(retry,tile.querySelector('.stream-fullscreen'));}retry.hidden=hasAudio;}}
-    video.muted = item.self || item.kind==='camera' || call.deafened;video.classList.toggle('camera-preview',item.self&&item.kind==='camera');
+    video.muted = true;video.classList.toggle('camera-preview',item.self&&item.kind==='camera');
     video.volume=(streamVolumes.get(item.id)??100)/100;
     tile.querySelector('.stream-label>span').textContent = item.name;
     tile.querySelector('.stream-quality').textContent = item.kind==='camera'?'720p · até 30 fps':item.self ? captureLabel() : remoteQuality(item.id);
-    setMedia(video, [item.video, item.audio]);
+    setMedia(video, [item.video, item.audio]);advanced.tile(tile,item);
   }
   $('screen-stage').classList.toggle('media-active',active.length>0);
   $('empty-stage').hidden = active.length > 0 || call.active&&!!call.voiceChannelId; $('streams').hidden = !active.length;
@@ -379,7 +387,7 @@ window.stringChat?.onInvite(async invite=>{if(call.active){toast('Você já est�
 setupFriends({toast,sounds,openConversation:id=>home?.openConversation(id),joinInvite:async invite=>{if(call.active){toast('Saia do grupo atual antes de entrar em outro.');return;}$('group-invite-input').value=invite;setConnectTab('join');showDialog('connect-dialog');await connectAction('join-group-button',async()=>{resetChat();await call.joinNetwork(invite);$('connect-dialog').close();});}});
 
 function openSettings() {
-  voiceUI.render();
+  voiceUI.render();advancedUI.render();
   $('theme-choice').value=settings.theme;$('close-to-tray').checked=settings.closeToTray;
   shortcutUI?.render();
   draftAvatar=settings.avatar;renderProfilePreview();refreshCameraDevices().catch(()=>{});
@@ -403,12 +411,12 @@ document.querySelectorAll('[data-bitrate]').forEach(button => button.addEventLis
 $('network-mode').addEventListener('change', () => { $('custom-ice-fields').hidden = $('network-mode').value !== 'custom'; });
 $('settings-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const next = { ...voiceUI.read(),avatar:draftAvatar,cameraDeviceId:$('camera-device').value,name: $('display-name').value.trim().slice(0, 32) || 'Você', resolution: Number($('resolution').value), fps: Number($('framerate').value), bitrate: Number($('bitrate').value), contentHint: $('content-hint').value, noiseMode: $('noise-mode').value, echoCancellation: $('echo-cancellation').checked, screenSound: $('screen-sound').checked, network: $('network-mode').value, iceUrl: $('ice-url').value.trim(), iceUser: $('ice-user').value, icePassword: $('ice-password').value };
+  const next = { ...voiceUI.read(),...advancedUI.read(),avatar:draftAvatar,cameraDeviceId:$('camera-device').value,name: $('display-name').value.trim().slice(0, 32) || 'Você', resolution: Number($('resolution').value), fps: Number($('framerate').value), bitrate: Number($('bitrate').value), contentHint: $('content-hint').value, noiseMode: $('noise-mode').value, echoCancellation: $('echo-cancellation').checked, screenSound: $('screen-sound').checked, network: $('network-mode').value, iceUrl: $('ice-url').value.trim(), iceUser: $('ice-user').value, icePassword: $('ice-password').value };
   next.closeToTray=$('close-to-tray').checked;next.theme=$('theme-choice').value;next.streamPriority=$('stream-priority').value;next.screenVolume=Number($('screen-volume').value);next.soundsEnabled=$('sounds-enabled').checked;next.soundVolume=Number($('sound-volume').value);
   try {
-    iceConfig(next);
+    iceConfig(next);await advanced.applySettings(next);
     if (microphone?.live) await microphone.configure(next);
-    if(call.camera&&next.cameraDeviceId!==settings.cameraDeviceId)await startCamera(next.cameraDeviceId);
+    if(call.camera&&(next.cameraDeviceId!==settings.cameraDeviceId||next.cameraBlur!==settings.cameraBlur))await startCamera(next.cameraDeviceId,next.cameraBlur);
     Object.assign(next,shortcutUI.values());
     const {icePassword:privatePassword,...toSave}={...settings,...next};await window.stringChat.saveSettings(toSave);
     Object.assign(settings, next);applyTheme(settings.theme);
@@ -422,7 +430,7 @@ $('settings-form').addEventListener('submit', async event => {
     }
     if(settings.screenSound&&call.screen&&!call.screenAudio)await recoverScreenAudio(false);
     await call.updateTracks(); $('settings-dialog').close(); toast(`Qualidade configurada: ${settings.resolution}p · ${settings.fps} fps · até ${settings.bitrate} Mbps por amigo.`);
-  } catch (error) { $('settings-error').textContent = userError(error); }
+  } catch (error) { $('settings-error').textContent = userError(error);advanced.applySettings(settings).catch(()=>{}); }
   finally { button.disabled = false; render(); }
 });
 $('screen-volume').addEventListener('input',()=>{$('screen-volume-value').value=`${$('screen-volume').value}%`;});
@@ -459,6 +467,7 @@ $('camera-button').addEventListener('click',toggleCamera);
 $('mic-button').addEventListener('click', toggleMic); $('deafen-button').addEventListener('click', toggleDeafen);
 $('share-button').addEventListener('click', toggleShare); $('stage-share').addEventListener('click', toggleShare);
 $('fullscreen-button').addEventListener('click', () => toggleFullscreen($('screen-stage')));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.fullscreenElement){event.preventDefault();document.exitFullscreen().catch(error=>toast(userError(error),true));}});
 $('help-button').addEventListener('click', () => showDialog('help-dialog'));
 $('stats-button').addEventListener('click', () => { renderStats(); showDialog('stats-dialog'); refreshStats(); });
 function openLeaveGroup() {
@@ -532,7 +541,7 @@ async function refreshStats() {
 }
 setInterval(refreshStats, 2000); setInterval(updateDuration, 1000);
 setInterval(() => {
-  voiceUI.tick();callExtras.tick();
+  voiceUI.tick();callExtras.tick();advanced.tick();
   const level = microphone?.level || 0;
   if ($('settings-dialog').open) $('mic-level').value = Math.min(1, level * 8);
   document.querySelectorAll(`[data-member="${call.id}"]`).forEach(node=>node.classList.toggle('speaking', call.meta.mic && (microphone?.telemetry?.speaking ?? level > 0.012)));
@@ -566,19 +575,22 @@ async function refreshCameraDevices(){
   for(const [index,device]of devices.filter(d=>d.kind==='videoinput'&&d.deviceId).entries())select.append(new Option(device.label||`Webcam ${index+1}`,device.deviceId));
   select.value=[...select.options].some(o=>o.value===previous)?previous:'';
 }
-async function startCamera(deviceId=settings.cameraDeviceId){
+async function startCamera(deviceId=settings.cameraDeviceId,blur=settings.cameraBlur){
   const epoch=++cameraEpoch,session=sessionEpoch;
   if(window.stringChat?.authorizeCamera&&!await window.stringChat.authorizeCamera())return false;
   if(epoch!==cameraEpoch||session!==sessionEpoch)return false;
   const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{width:{ideal:1280,max:1280},height:{ideal:720,max:720},frameRate:{ideal:30,max:30},...(deviceId?{deviceId:{exact:deviceId}}:{})}});
-  const track=stream.getVideoTracks()[0];
+  let track=stream.getVideoTracks()[0];
   if(!track||epoch!==cameraEpoch||session!==sessionEpoch){stream.getTracks().forEach(t=>t.stop());return false;}
-  track.contentHint='motion';const previous=call.camera;
+  const previous=call.camera,previousProcessor=cameraProcessor;let nextProcessor=null;
+  if(blur){try{nextProcessor=new CameraBlur(stream);pendingCameraProcessor=nextProcessor;track=await nextProcessor.start();if(epoch!==cameraEpoch||session!==sessionEpoch){nextProcessor.close();return false;}nextProcessor.addEventListener('error',event=>{if(cameraProcessor===nextProcessor){stopCamera();toast('Desfoque: '+event.detail,true);}});}catch(e){nextProcessor?.close();throw e;}finally{if(pendingCameraProcessor===nextProcessor)pendingCameraProcessor=null;}}
+  if(nextProcessor)stream.getVideoTracks()[0].addEventListener('ended',()=>{if(cameraProcessor===nextProcessor){stopCamera();toast('A câmera foi desconectada.');}});
+  track.contentHint='motion';
   track.addEventListener('ended',()=>{if(call.camera===track){stopCamera();toast('A câmera foi desconectada.');}});
-  try{await call.updateTracks({camera:track});previous?.stop();await refreshCameraDevices();return true;}
-  catch(error){stream.getTracks().forEach(t=>t.stop());await call.updateTracks({camera:previous});throw error;}
+  try{await call.updateTracks({camera:track});cameraProcessor=nextProcessor;previousProcessor?.close();previous?.stop();await refreshCameraDevices();return true;}
+  catch(error){nextProcessor?.close();stream.getTracks().forEach(t=>t.stop());cameraProcessor=previousProcessor;await call.updateTracks({camera:previous});throw error;}
 }
-async function stopCamera(){cameraEpoch++;const track=call.camera;await call.updateTracks({camera:null});track?.stop();render();}
+async function stopCamera(){cameraEpoch++;pendingCameraProcessor?.close();pendingCameraProcessor=null;const track=call.camera,processor=cameraProcessor;cameraProcessor=null;await call.updateTracks({camera:null});processor?.close();track?.stop();render();}
 async function toggleCamera(){
   if(cameraBusy)return;
   if(!call.active||!call.voiceChannelId){toast('Entre em um canal de voz para ligar a câmera.');return;}

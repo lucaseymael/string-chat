@@ -1,3 +1,5 @@
+import { screenEncoding } from './advanced-settings.js';
+import { requestViewerQuality,requestVideoRecovery,handleMediaControl,applyPlaybackBuffer } from './rtc-controls.js';
 import {cleanAvatar} from './profile.js';
 import {associateMedia,configureReceiver} from './media-policy.js';
 // All media flows directly between browsers. Only room-control messages use the creator as a hub.
@@ -76,7 +78,7 @@ export class MeshCall extends EventTarget {
     super(); this.settings = settings;this.selfIdentity=globalThis.window?.stringChat?.identity?.id||uid(); this.id = this.selfIdentity; this.peers = new Map(); this.room = null;
     this.hostId = null; this.isHost = false; this.startedAt = null; this.generation = 0;
     this.mic = null; this.screen = null; this.screenAudio = null; this.camera = null;
-    this.micOn = false; this.deafened = false; this.chatSeen = new Set();
+    this.pttDown=false;this.micOn = false; this.deafened = false; this.chatSeen = new Set();
     this.externalSignal = false; this.networkAddress = null; this.networkStatus = null; this.networkInfo = null; this.networkQueue = Promise.resolve(); this.recoveries = new Map();
     this.voiceChannelId='voice-lobby';
     if (globalThis.window?.stringChat?.onRoomEvent) window.stringChat.onRoomEvent(event => {
@@ -85,7 +87,7 @@ export class MeshCall extends EventTarget {
   }
   get active() { return !!this.room; }
   get connected() { return [...this.peers.values()].filter(p => p.channel?.readyState === 'open' && p.admitted); }
-  get meta() { return { id: this.id, name: cleanName(this.settings.name, 'Você'), mic: !!(this.mic && this.micOn && !this.deafened), screen: !!this.screen, camera: !!this.camera, avatar: cleanAvatar(this.settings.avatar), screenAudio: !!this.screenAudio, screenAudioVolume:this.settings.screenVolume,screenAudioState:this.screenAudio?'active':this.settings.screenSound?'unavailable':'off', deafened: this.deafened,voiceChannelId:this.voiceChannelId }; }
+  get meta() { return { id: this.id, name: cleanName(this.settings.name, 'Você'), mic: !!(this.mic && this.micOn && !this.deafened && (this.settings.voiceInputMode!=='ptt'||this.pttDown)), screen: !!this.screen, camera: !!this.camera, avatar: cleanAvatar(this.settings.avatar), screenAudio: !!this.screenAudio, screenAudioVolume:this.settings.screenVolume,screenAudioState:this.screenAudio?'active':this.settings.screenSound?'unavailable':'off', deafened: this.deafened,voiceChannelId:this.voiceChannelId }; }
   startHost(name = 'Sala da galera') {
     if (this.active) return;
     this.isHost = true; this.hostId = this.id; this.room = { id: uid(), name: name.trim().slice(0, 40) || 'Sala da galera' };
@@ -213,7 +215,7 @@ export class MeshCall extends EventTarget {
     associateMedia(peer);
     pc.ontrack = event => {
       const slot = pc.getTransceivers().indexOf(event.transceiver);
-      configureReceiver(event.receiver,slot);peer.tracks.set(slot, event.track);
+      configureReceiver(event.receiver,slot,this.settings.playbackBuffer);peer.tracks.set(slot, event.track);
       event.track.onunmute = () => emit(this, 'tracks', peer);
       event.track.onended = () => emit(this, 'tracks', peer);
       emit(this, 'tracks', peer);
@@ -279,6 +281,7 @@ export class MeshCall extends EventTarget {
       emit(this, 'change'); return;
     }
     if (!peer.admitted) return;
+    if(await handleMediaControl.call(this,peer,message))return;
     if (message.type === 'state') {
       if (message.member?.id !== peer.id) return;
       peer.meta = this.sanitizeMember(message.member); peer.name = peer.meta.name;
@@ -348,6 +351,8 @@ export class MeshCall extends EventTarget {
     if (payload.candidate && (typeof payload.candidate.candidate !== 'string' || payload.candidate.candidate.length > 4096)) return;
     const peer = this.peers.get(id) || this.makePeer(id, name, false);
     if (payload.desc) {
+      if(payload.desc.type==='offer'&&(peer.makingOffer||peer.pc.signalingState!=='stable')){if(this.id<peer.id){peer.ignoreOffer=true;return;}peer.offerRevision=(peer.offerRevision||0)+1;if(peer.pc.signalingState!=='stable')await peer.pc.setLocalDescription({type:'rollback'});}
+      if(payload.desc.type==='answer'&&peer.pc.signalingState!=='have-local-offer')return;peer.ignoreOffer=false;
       await peer.pc.setRemoteDescription(payload.desc);
       if (!peer.slots.length) this.adoptRemoteSlots(peer);
       for (const candidate of peer.candidates.splice(0)) await peer.pc.addIceCandidate(candidate);
@@ -357,7 +362,7 @@ export class MeshCall extends EventTarget {
         this.route(id, { desc: peer.pc.localDescription.toJSON() });
       }
       this.configurePeer(peer);
-    } else if (payload.candidate) {
+    } else if (payload.candidate && !peer.ignoreOffer) {
       if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(payload.candidate);
       else if (peer.candidates.length < 80) peer.candidates.push(payload.candidate);
     }
@@ -374,25 +379,26 @@ export class MeshCall extends EventTarget {
     await Promise.all(peer.slots.map((slot, i) => slot.sender.replaceTrack(tracks[i] || null)));
     await this.configurePeer(peer);
   }
-  configurePeer(peer) {
+  configurePeer(peer,strictScreen=false) {
     // Serialize get/setParameters transactions, including stats-triggered and settings updates.
     peer.paramsQueue = peer.paramsQueue.catch(() => {}).then(async () => {
-      if (peer.pc.signalingState === 'closed') return;
+      if (peer.pc.signalingState === 'closed') {if(strictScreen)throw Error('Conexão encerrada.');return;}
       for (const [i, slot] of peer.slots.entries()) {
         const sender = slot.sender;
-        if (!sender.track || !peer.pc.remoteDescription) continue;
+        if (!sender.track || !peer.pc.remoteDescription) {if(strictScreen&&i===1)throw Error('Vídeo indisponível.');continue;}
         const params = sender.getParameters();
-        if (!params.encodings?.length) continue;
+        if (!params.encodings?.length) {if(strictScreen&&i===1)throw Error('Vídeo sem codificação ativa.');continue;}
         const bitrate = i === 1 ? this.settings.bitrate * 1000000 : i === 3 ? 3000000 : i === 2 ? 256000 : 128000;
         for (const encoding of params.encodings) {
           encoding.maxBitrate = bitrate;
           if (i === 3) { encoding.maxFramerate=30; encoding.scaleResolutionDownBy=1; }
           if (i === 0 || i === 2) { encoding.priority='high';encoding.networkPriority='high'; }
-          if (i === 1) { encoding.maxFramerate = this.settings.fps; encoding.scaleResolutionDownBy = 1; encoding.priority = 'medium'; encoding.networkPriority = 'medium'; }
+          if (i === 1) { Object.assign(encoding,screenEncoding(this.settings,peer.viewerProfile,this.screen?.getSettings().height||this.settings.resolution));encoding.priority='medium';encoding.networkPriority='medium'; }
         }
         if (i === 1) params.degradationPreference = this.settings.streamPriority === 'fluid' ? 'maintain-framerate' : 'maintain-resolution';
         try { await sender.setParameters(params); }
         catch (error) {
+          if(strictScreen&&i===1)throw error;
           if (error.name === 'InvalidStateError' || peer.pc.signalingState === 'closed') continue;
           emit(this, 'error', `O navegador não aplicou o limite de ${i === 1 ? 'vídeo' : 'áudio'}: ${error.message}`);
         }
@@ -400,15 +406,19 @@ export class MeshCall extends EventTarget {
     });
     return peer.paramsQueue;
   }
+  setPushToTalk(down){down=!!down;if(this.pttDown===down)return;this.pttDown=down;this.announce();}
+  requestViewerQuality(id,profile){return requestViewerQuality.call(this,id,profile);}
+  requestVideoRecovery(id,manual){return requestVideoRecovery.call(this,id,manual);}
+  applyPlaybackBuffer(mode){return applyPlaybackBuffer.call(this,mode);}
   async updateTracks({ mic = this.mic, screen = this.screen, screenAudio = this.screenAudio, camera = this.camera } = {}) {
     this.mic = mic; this.screen = screen; this.screenAudio = screenAudio; this.camera = camera;
-    if (this.mic) this.mic.enabled = this.micOn && !this.deafened;
+    if (this.mic) this.mic.enabled = this.meta.mic;
     const results = await Promise.allSettled([...this.peers.values()].map(p => this.syncPeer(p)));
     for (const result of results) if (result.status === 'rejected') emit(this, 'error', `Não foi possível enviar a mídia: ${result.reason.message}`);
     this.announce();
   }
   announce() {
-    if (this.mic) this.mic.enabled = this.micOn && !this.deafened;
+    if (this.mic) this.mic.enabled = this.meta.mic;
     this.broadcast({ type: 'state', member: this.meta }); this.sendRoster(); emit(this, 'change');
   }
   sendChat(text) {
@@ -451,6 +461,7 @@ export class MeshCall extends EventTarget {
   }
   dropPeer(id, reason) {
     const peer = this.peers.get(id); if (!peer) return;
+    if(peer.qualityRequest){clearTimeout(peer.qualityRequest.timer);peer.qualityRequest.reject(Error('O participante saiu.'));peer.qualityRequest=null;}
     this.peers.delete(id); clearTimeout(peer.expireTimer); clearTimeout(peer.connectTimer); clearTimeout(peer.disconnectTimer); clearTimeout(peer.recoveryTimer);
     peer.channel?.close(); peer.pc.close();
     emit(this, 'peerremoved', id); if (reason && peer.admitted) emit(this, 'memberleft', reason);
@@ -463,7 +474,7 @@ export class MeshCall extends EventTarget {
     this.generation++; this.room = null; this.isHost = false; this.hostId = null; this.startedAt = null;
     for (const peer of [...this.peers.values()]) this.dropPeer(peer.id);
     for (const track of [this.mic, this.screen, this.screenAudio, this.camera]) track?.stop();
-    this.mic = this.screen = this.screenAudio = this.camera = null; this.camera = null; this.micOn = false; this.deafened = false; this.chatSeen.clear(); this.id = this.selfIdentity;
+    this.mic = this.screen = this.screenAudio = this.camera = null; this.pttDown=false;this.micOn = false; this.deafened = false; this.chatSeen.clear(); this.id = this.selfIdentity;
     emit(this, 'change');
   }
   async readStats() {

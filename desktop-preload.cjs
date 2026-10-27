@@ -3,6 +3,8 @@ const preferences = ipcRenderer.sendSync('preferences:read');
 const identity=ipcRenderer.sendSync('identity:read');
 contextBridge.exposeInMainWorld('stringChat', {
   isDesktop: true,
+  onPushToTalk:callback=>ipcRenderer.on('ptt:state',(event,value)=>callback(value)),
+  onPushToTalkError:callback=>ipcRenderer.on('ptt:error',(event,message)=>callback(message)),
   updateTray:value=>ipcRenderer.send('tray:state',value),
   exportDiagnostics:value=>ipcRenderer.invoke('diagnostics:export',value),
   shortcutStatus:()=>ipcRenderer.invoke('shortcuts:status'),

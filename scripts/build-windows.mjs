@@ -30,6 +30,7 @@ for (const entry of await readdir(root, { withFileTypes: true })) {
 }
 for (const name of ['icon.svg', 'icon.png', 'icon.ico', 'package.json', 'vendor']) await cp(join(root, name), join(app, name), { recursive: true });
 compile(join(app, 'native/AudioLoopback.exe'), ['native/AudioLoopback.cs']);
+compile(join(app,'native/PushToTalk.exe'),['native/PushToTalk.cs']);
 compile(join(output, 'StringChatMaintenance.exe'), ['native/Maintenance.cs', 'native/InstallSupport.cs'], { gui: true, icon: true });
 await rcedit(join(output, 'StringChat.exe'), {
   icon: join(root, 'icon.ico'), 'file-version': pkg.version, 'product-version': pkg.version,

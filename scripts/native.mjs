@@ -20,4 +20,5 @@ export function compile(output, sources, { gui = false, icon = false, resource }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   compile(join(root, 'native/AudioLoopback.exe'), ['native/AudioLoopback.cs']);
+  compile(join(root,'native/PushToTalk.exe'),['native/PushToTalk.cs']);
 }
