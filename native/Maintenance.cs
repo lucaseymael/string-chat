@@ -1,5 +1,5 @@
 using System;using System.IO;using System.Diagnostics;using System.Windows.Forms;using System.Threading;
-[assembly:System.Reflection.AssemblyTitle("String Chat")][assembly:System.Reflection.AssemblyProduct("String Chat")][assembly:System.Reflection.AssemblyVersion("1.6.0.0")]
+[assembly:System.Reflection.AssemblyTitle("String Chat")][assembly:System.Reflection.AssemblyProduct("String Chat")][assembly:System.Reflection.AssemblyVersion("1.6.1.0")]
 class Maintenance{
  static string Quote(string value){return "\""+value.Replace("\"","")+"\"";}
  [STAThread]static void Main(string[] args){try{

@@ -1,7 +1,7 @@
 {
   "name": "string-chat-desktop",
   "productName": "String Chat",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "description": "Amigos, conversas privadas e chamadas P2P com tela em alta qualidade.",
   "type": "module",
@@ -13,7 +13,8 @@
     "test": "node scripts/test.mjs",
     "test:network": "node scripts/test.mjs --network",
     "build:windows": "node scripts/build-windows.mjs",
-    "test:desktop": "node tests/desktop-voice.cjs"
+    "test:desktop": "node tests/desktop-voice.cjs",
+    "test:voice-state": "node tests/voice-state-desktop.cjs"
   },
   "devDependencies": {
     "electron": "45.0.0",

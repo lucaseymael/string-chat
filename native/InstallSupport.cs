@@ -1,6 +1,6 @@
 using System;using System.IO;using System.IO.Compression;using System.Security.Cryptography;using System.Collections.Generic;using System.Web.Script.Serialization;using System.Diagnostics;using System.Threading;using Microsoft.Win32;using System.Reflection;
 static class InstallSupport{
- public const string Version="1.6.0";public const string Product="String Chat";public const string RegistryKey=@"Software\Microsoft\Windows\CurrentVersion\Uninstall\StringChat";
+ public const string Version="1.6.1";public const string Product="String Chat";public const string RegistryKey=@"Software\Microsoft\Windows\CurrentVersion\Uninstall\StringChat";
  public static readonly JavaScriptSerializer Json=new JavaScriptSerializer{MaxJsonLength=16000000};
  public static string DefaultRoot{get{return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","StringChat");}}
  public static string LegacyRoot{get{return DefaultRoot;}}

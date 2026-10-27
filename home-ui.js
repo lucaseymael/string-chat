@@ -1,4 +1,5 @@
 import {avatarContent} from './profile.js';
+import {getVoiceState} from './voice-state.js';
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const imageTypes=['image/png','image/jpeg','image/webp','image/gif'];
 const emojiList=['😀','😂','🤣','😊','😍','😎','🤔','😭','🥳','👀','💀','👍','👎','👏','❤️','💚','🔥','✨','🎉','💯','✅','🎮','🎧','🍕'];
@@ -83,7 +84,9 @@ export function setupHome({toast,sounds,onHome,onCreate,onJoin,onGroup,onCallCon
   return{showFriends,openConversation,setActive(value){active=value;updateHeader();if(active&&selected&&document.hasFocus())window.stringChat.directRead(selected).catch(()=>{});},updateSession(session){
     $('home-group-button').hidden=!session.active;$('home-group-button').textContent=session.active?`Voltar para ${session.group}`:'';$('home-call-dock').hidden=!session.active||!session.voice;
     $('home-call-name').textContent=session.voice?`${session.voice} · ${session.group}`:'';
-    const mic=$('home-call-dock').querySelector('[data-call-control=mic]');mic.textContent=session.mic?'Mutar microfone':'Ligar microfone';mic.setAttribute('aria-pressed',String(session.mic));
+    const state=getVoiceState(session);$('home-call-heading').textContent=session.deafened?state.label:'Você continua na chamada';$('home-call-heading').title=state.label+' · '+state.hearing;
+    const hearing=$('home-call-dock').querySelector('[data-call-control=deafen]');hearing.innerHTML=`<svg aria-hidden="true"><use href="#i-${session.deafened?'headphones-off':'headphones'}"/></svg>`;hearing.setAttribute('aria-pressed',String(session.deafened));hearing.setAttribute('aria-label',session.deafened?'Reativar áudio recebido':'Silenciar áudio recebido');hearing.title=hearing.getAttribute('aria-label');hearing.classList.toggle('voice-deafened',session.deafened);
+    const mic=$('home-call-dock').querySelector('[data-call-control=mic]');mic.textContent=session.deafened?'Microfone pausado':session.mic?'Mutar microfone':'Ligar microfone';mic.setAttribute('aria-pressed',String(session.mic));
     $('home-welcome-name').textContent=getSelf().name;updateHeader();
   }};
 }

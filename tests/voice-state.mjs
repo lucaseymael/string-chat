@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { getVoiceState, voiceStateMarkup } from '../voice-state.js';
+assert.equal(getVoiceState({ mic: true }).code, 'active');
+assert.equal(getVoiceState({ mic: false }).code, 'muted');
+assert.equal(getVoiceState({ mic: false }).deafened, false);
+assert.equal(getVoiceState({ mic: false, deafened: true }).code, 'deafened');
+assert.equal(getVoiceState({ mic: true, deafened: true }).micMuted, true);
+assert.match(voiceStateMarkup({ mic: false }), /#i-mic-off/);
+assert.doesNotMatch(voiceStateMarkup({ mic: false }), /#i-headphones-off/);
+assert.match(voiceStateMarkup({ mic: true, deafened: true }), /#i-headphones-off/);
+assert.match(voiceStateMarkup({ deafened: true }), /Não está ouvindo a chamada/);
+console.log('PASS microphone mute and full deafen have distinct, accessible indicators');

@@ -1,5 +1,6 @@
 import { MeshCall, iceConfig } from './rtc.js';
 import { Microphone } from './microphone.js';
+import { getVoiceState, voiceStateMarkup } from './voice-state.js';
 import { normalizeVoiceSettings } from './voice-dsp.js';
 import { setupVoiceUI } from './voice-ui.js';
 import { setupCallExtras, setupHistorySearch } from './call-extras.js';
@@ -72,14 +73,14 @@ const voiceUI=setupVoiceUI({settings,getMicrophone:()=>microphone,error:e=>toast
 const callExtras=setupCallExtras({call,settings,audioElements,toast});
 
 function participantMarkup(member, self = false, status = '') {
-  return `<div class="participant-card${self ? ' self' : ''}" data-member="${safe(member.id)}"><span class="participant-mic">${icon(member.mic ? 'mic' : 'mic-off')}</span><span class="avatar">${avatarContent(member,safe)}</span><div class="participant-name">${safe(member.name)}${self ? ' <span>(você)</span>' : ''}</div><span class="participant-status">${safe(status || (member.screen ? 'Compartilhando tela' : member.deafened ? 'Áudio silenciado' : member.mic ? 'Microfone ligado' : 'Microfone desligado'))}</span></div>`;
+  return `<div class="participant-card${self ? ' self' : ''}" data-member="${safe(member.id)}"><span class="participant-mic">${voiceStateMarkup(member)}</span><span class="avatar">${avatarContent(member,safe)}</span><div class="participant-name">${safe(member.name)}${self ? ' <span>(você)</span>' : ''}</div><span class="participant-status">${safe(status || (getVoiceState(member).label + (member.screen ? ' · Compartilhando tela' : '')))}</span></div>`;
 }
 function render() {
   if(pageClosing)return;
   window.stringChat.updateTray({inCall:call.active&&!!call.voiceChannelId,mic:call.meta.mic,deafened:call.deafened});
   const name = call.meta.name;
   $('self-name').textContent = name; $('self-avatar').innerHTML = avatarContent(call.meta,safe);
-  $('self-status').textContent = !call.active ? 'Disponível' : call.deafened ? 'Áudio silenciado' : call.meta.mic ? 'Microfone ligado' : 'Microfone desligado';
+  $('self-status').textContent = !call.active ? 'Disponível' : getVoiceState(call.meta).label;
   const voice=call.room?.channels?.find(c=>c.id===call.voiceChannelId);
   $('room-title').textContent = viewMode==='text'?`# ${call.room?.channels?.find(c=>c.id===selectedTextChannel)?.name||'geral'}`:voice?.name || (call.active?'Escolha um canal de voz':'Seu grupo');
   $('group-title').textContent=call.room?.name||'Seu grupo, sua galera.';
@@ -98,6 +99,8 @@ function render() {
   $('mic-button').setAttribute('aria-pressed', String(call.meta.mic));
   $('mic-button').setAttribute('aria-label', call.micOn ? 'Desligar microfone' : 'Ligar microfone');
   $('mic-button').title = `${call.micOn ? 'Desligar' : 'Ligar'} microfone${settings.muteShortcut?' ('+settings.muteShortcut.replaceAll('Control','Ctrl').replaceAll('Super','Win')+')':''}`;
+  $('deafen-button').innerHTML=icon(call.deafened?'headphones-off':'headphones');
+  $('deafen-button').classList.toggle('voice-deafened',call.deafened);
   $('deafen-button').setAttribute('aria-pressed', String(call.deafened));
   $('deafen-button').setAttribute('aria-label', call.deafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido');
   $('deafen-button').title = (call.deafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido')+(settings.deafenShortcut?' ('+settings.deafenShortcut.replaceAll('Control','Ctrl').replaceAll('Super','Win')+')':'');
@@ -116,7 +119,7 @@ function render() {
   $('stage-state').textContent = screenCount ? `${screenCount === 1 ? 'TRANSMISSÃO' : 'TRANSMISSÕES'} AO VIVO` : call.connected.length ? 'BOA COMPANHIA, CONEXÃO DIRETA' : 'SEU ESPAÇO, SEM LIMITES';
   $('leave-button').disabled = !call.active && !call.mic && !call.screen && !call.camera;
   renderStreams(); callExtras.controls(); updateDuration();
-  home?.updateSession({active:call.active,group:call.room?.name,voice:voice?.name,mic:call.meta.mic});
+  home?.updateSession({active:call.active,group:call.room?.name,voice:voice?.name,mic:call.meta.mic,deafened:call.deafened});
   $('room-nav').classList.toggle('selected',call.active&&viewMode!=='home');$('home-button').classList.toggle('selected',viewMode==='home');
   $('toggle-chat').hidden=viewMode==='home';$('invite-button').innerHTML=icon('plus')+(call.active?'Convidar amigos':'Criar grupo');
 }
@@ -126,7 +129,7 @@ function renderGroupChannels() {
   if(!channels.some(c=>c.id===selectedTextChannel&&c.kind==='text')){selectedTextChannel=channels.find(c=>c.kind==='text')?.id||'text-geral';call.textChannelId=selectedTextChannel;renderChatChannel();}
   $('text-channels').innerHTML=channels.filter(c=>c.kind==='text').map(c=>`<button class="channel group-channel ${c.id===selectedTextChannel?'active':''}" data-text-channel="${safe(c.id)}"><span class="hash-mark">#</span><span>${safe(c.name)}</span>${channelUnread.get(c.id)?`<small class="unread-count">${Math.min(99,channelUnread.get(c.id))}</small>`:''}</button>`).join('');
   const people=[call.meta,...[...call.peers.values()].map(p=>({...p.meta,id:p.id,name:p.name}))];
-  $('voice-channels').innerHTML=channels.filter(c=>c.kind==='voice').map(c=>`<button class="channel group-channel ${c.id===call.voiceChannelId?'active':''}" data-voice-channel="${safe(c.id)}">${icon('headphones')}<span>${safe(c.name)}</span><small>${people.filter(p=>p.voiceChannelId===c.id).length}</small></button><div class="channel-members">${people.filter(p=>p.voiceChannelId===c.id).map(p=>`<div class="sidebar-person"><span class="avatar">${avatarContent(p,safe)}</span><span>${safe(p.name)}</span>${icon(p.mic?'mic':'mic-off')}</div>`).join('')}</div>`).join('');
+  $('voice-channels').innerHTML=channels.filter(c=>c.kind==='voice').map(c=>`<button class="channel group-channel ${c.id===call.voiceChannelId?'active':''}" data-voice-channel="${safe(c.id)}">${icon('headphones')}<span>${safe(c.name)}</span><small>${people.filter(p=>p.voiceChannelId===c.id).length}</small></button><div class="channel-members">${people.filter(p=>p.voiceChannelId===c.id).map(p=>`<div class="sidebar-person" data-voice-member="${safe(p.id)}"><span class="avatar">${avatarContent(p,safe)}</span><span>${safe(p.name)}</span>${voiceStateMarkup(p)}</div>`).join('')}</div>`).join('');
   document.querySelectorAll('[data-text-channel]').forEach(button=>button.onclick=()=>{selectedTextChannel=button.dataset.textChannel;channelUnread.delete(selectedTextChannel);call.textChannelId=selectedTextChannel;renderChatChannel();setViewMode('text');render();});
   document.querySelectorAll('[data-voice-channel]').forEach(button=>button.onclick=async()=>{try{if(button.dataset.voiceChannel!==call.voiceChannelId)await call.changeVoiceChannel(button.dataset.voiceChannel);setViewMode('voice');render();}catch(error){toast(userError(error),true);}});
   document.querySelector('.chat-header h2').textContent=`# ${channels.find(c=>c.id===selectedTextChannel)?.name||'geral'}`;
@@ -186,7 +189,7 @@ function renderStreams() {
   $('screen-stage').classList.toggle('media-active',active.length>0);
   $('empty-stage').hidden = active.length > 0 || call.active&&!!call.voiceChannelId; $('streams').hidden = !active.length;
   callPeople.hidden=active.length>0||!call.active||!call.voiceChannelId;
-  if(!callPeople.hidden){const people=[call.meta,...call.connected.filter(peer=>peer.meta.voiceChannelId===call.voiceChannelId).map(peer=>({...peer.meta,name:peer.name}))];callPeople.innerHTML=people.map(person=>`<article class="voice-person"><span class="avatar">${avatarContent(person,safe)}</span><strong>${safe(person.name)}</strong><span>${person.mic?'Microfone ligado':'Microfone desligado'}</span></article>`).join('');}
+  if(!callPeople.hidden){const people=[call.meta,...call.connected.filter(peer=>peer.meta.voiceChannelId===call.voiceChannelId).map(peer=>({...peer.meta,name:peer.name}))];callPeople.innerHTML=people.map(person=>`<article class="voice-person" data-member="${safe(person.id)}"><span class="voice-person-indicators">${voiceStateMarkup(person)}</span><span class="avatar">${avatarContent(person,safe)}</span><strong>${safe(person.name)}</strong><span>${getVoiceState(person).label}</span></article>`).join('');}
 }
 function captureLabel() {
   if (!call.screen) return '';
@@ -532,7 +535,7 @@ setInterval(() => {
   voiceUI.tick();callExtras.tick();
   const level = microphone?.level || 0;
   if ($('settings-dialog').open) $('mic-level').value = Math.min(1, level * 8);
-  document.querySelector(`[data-member="${call.id}"]`)?.classList.toggle('speaking', call.meta.mic && (microphone?.telemetry?.speaking ?? level > 0.012));
+  document.querySelectorAll(`[data-member="${call.id}"]`).forEach(node=>node.classList.toggle('speaking', call.meta.mic && (microphone?.telemetry?.speaking ?? level > 0.012)));
 }, 150);
 setChatVisible(chatVisible); render();
 document.querySelector('a[href="/licenses"]')?.addEventListener('click', event => { if (window.stringChat?.isDesktop) { event.preventDefault(); window.stringChat.openLicenses(); } });
@@ -609,7 +612,7 @@ $('image-viewer').addEventListener('click',event=>{if(event.target===$('image-vi
 $('image-viewer').addEventListener('close',()=>{viewerEpoch++;viewerId=null;viewerSave=null;if(viewerUrl)URL.revokeObjectURL(viewerUrl);viewerUrl=null;$('image-viewer-photo').removeAttribute('src');});
 
 // Start in the personal space; a group opens only after an explicit create/join.
-home=setupHome({toast,sounds,getSelf:()=>call.meta,onHome:()=>{setViewMode('home');render();},onCreate:()=>openConnect('invite'),onJoin:()=>openConnect('join'),onGroup:()=>{if(call.active){setViewMode(call.voiceChannelId?'voice':'text');render();}},onCallControl:kind=>$(kind==='leave'?'leave-button':kind==='camera'?'camera-button':'mic-button').click(),openImage:openImageViewer});
+home=setupHome({toast,sounds,getSelf:()=>call.meta,onHome:()=>{setViewMode('home');render();},onCreate:()=>openConnect('invite'),onJoin:()=>openConnect('join'),onGroup:()=>{if(call.active){setViewMode(call.voiceChannelId?'voice':'text');render();}},onCallControl:kind=>$(kind==='leave'?'leave-button':kind==='camera'?'camera-button':kind==='deafen'?'deafen-button':'mic-button').click(),openImage:openImageViewer});
 $('home-button').onclick=()=>home.showFriends();document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();home.showFriends();});render();
 
 function watchSystemAudio(instance,screen){instance.addEventListener('error',event=>{if(systemAudio!==instance||call.screen!==screen)return;lastAudioError=event.detail;systemAudio=null;screenAudioLabel='';call.updateTracks({screenAudio:null});instance.stop();if(audioFailures<2){audioFailures++;clearTimeout(audioRecovery);audioRecovery=setTimeout(()=>recoverScreenAudio(false),700);}else toast('O som da tela foi interrompido. Clique em Recuperar áudio.',true);});}
