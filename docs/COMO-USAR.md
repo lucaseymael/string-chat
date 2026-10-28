@@ -1,10 +1,10 @@
-# String Chat 1.6 — amigos, conversas privadas e grupos
+# String Chat 1.8 — amigos, conversas privadas e grupos
 
-**Atualizem os dois computadores para a versão 1.6.1.** Fechem a versão antiga antes de abrir o novo programa.
+**Atualizem todos os computadores para a versão 1.8.0.** Fechem a versão antiga antes de abrir o novo programa. Amizades antigas sem identidade verificada precisam trocar novos códigos e confirmar novamente; seu histórico é preservado.
 
 ## Instalar e atualizar
 
-Execute **StringChat-Setup-1.6.1.exe** em todos os PCs da chamada. O setup verifica o pacote, fecha o app instalado, instala a versão nova e só depois remove as versões anteriores reconhecidas. O perfil e as conversas salvas são preservados. Reexecutar o setup da mesma versão repara arquivos. O programa passa a aparecer em **Aplicativos instalados** do Windows para desinstalar.
+Execute **StringChat-Setup-1.8.0.exe** em todos os PCs da chamada. O setup verifica o pacote, fecha o app instalado, instala a versão nova e só depois remove as versões anteriores reconhecidas. O perfil e as conversas salvas são preservados. Reexecutar o setup da mesma versão repara arquivos. O programa aparece em **Aplicativos instalados** do Windows para desinstalar.
 
 As próximas atualizações usam o mesmo processo: abra o setup novo. O launcher e os atalhos apontam para a versão instalada atual. A limpeza é das versões instaladas reconhecidas; cópias portáteis guardadas em outras pastas não são apagadas. Se você tinha fixado um executável antigo na barra de tarefas, fixe o novo atalho String Chat após esta migração.
 
@@ -38,15 +38,33 @@ O programa abre em **Amigos**, sem entrar ou criar grupo. Canais, participantes 
 1. Em **Adicionar amigo**, envie seu código ou cole o código do amigo. O outro usuário precisa aceitar o pedido.
 2. Em **Amigos**, clique em **Conversar**, ou escolha o contato na lista **Mensagens diretas**.
 3. Envie texto, emojis, imagens, GIFs ou arquivos de até **8 MB**. Clique numa imagem para ampliar e use **Salvar** para guardar o arquivo.
-4. **Entregue** significa que o programa do amigo confirmou o recebimento. Quando o amigo está offline, aparece **Não entregue**; clique em **Tentar novamente** quando ele voltar. Não há um servidor guardando mensagens para entrega automática.
+4. **Entregue** significa que o programa do amigo confirmou o recebimento. Em P2P, quando o amigo está offline, aparece **Não entregue**; clique em **Tentar novamente** quando ele voltar. Com ambos no servidor opcional, aparece **Na fila do servidor** até ele receber automaticamente.
 
 As conversas privadas não passam pelo criador nem pelos participantes dos grupos. Cada amizade usa uma chave própria para proteger as mensagens durante o envio. O histórico é salvo localmente nos dois PCs; os arquivos e o histórico privado ficam separados dos grupos. O armazenamento local não recebe criptografia adicional em disco.
 
-Os dois precisam estar com o String Chat aberto na mesma rede Radmin/LAN para entregar novas mensagens. O histórico já recebido pode ser lido com o amigo offline. A indicação **Entregue** não é uma confirmação de leitura.
+No modo P2P, os dois precisam estar com o String Chat aberto na mesma rede Radmin/LAN para entregar novas mensagens. O histórico já recebido pode ser lido com o amigo offline. A indicação **Entregue** não é uma confirmação de leitura.
+
+Nas ações da mensagem, use **Responder**, **Editar**, **Excluir**, **Reagir** ou **Fixar**. Alterações de mensagens privadas offline aguardam confirmação do amigo e mostram esse estado. Uma exclusão recebida não desfaz cópias que alguém já tenha salvo.
+
+Para ligar sem grupo, abra a conversa privada e use o botão de voz ou vídeo. O amigo precisa aceitar; o toque não liga microfone ou câmera. Encerre a chamada/grupo atual antes de iniciar outra chamada privada. A webcam continua exigindo a autorização local.
+
+## Presença e privacidade
+
+No painel de amigos, escolha **Disponível**, **Ausente**, **Não perturbe** ou **Invisível** e escreva um status opcional. Invisível publica offline e oculta seu texto de status; não perturbe mantém a entrega sem alertas sonoros. Você pode bloquear, desbloquear ou remover contatos. Depois de desbloquear, um novo pedido precisa ser aceito para retomar a amizade.
+
+Notificações do Windows e prévia de mensagens são opcionais nas configurações. Elas vêm desligadas; o conteúdo só é mostrado se você permitir.
+
+## Servidor próprio opcional
+
+Em **Configurações → Seu servidor, seus amigos**, informe o endereço HTTPS e o token de cadastro fornecidos pelo administrador. O token só é necessário na primeira conexão da identidade e não é salvo nas preferências. A conexão automática é opcional e não entra em chamadas ou grupos.
+
+Em **Adicionar amigo**, o diretório permite procurar pessoas cadastradas no mesmo servidor. Pedidos continuam exigindo aceite. Para criar um grupo hospedado, escolha **Servidor próprio** na rede do novo grupo. Os grupos dos quais você faz parte aparecem na página inicial; **Entrar** abre o grupo sem ligar seu microfone automaticamente.
+
+O administrador deve preparar o serviço conforme [HOSPEDAGEM.md](HOSPEDAGEM.md). Não é preciso servidor para continuar usando P2P. A mídia continua direta e pode exigir STUN/TURN em redes externas; hospedar o serviço de mensagens não garante conectividade de áudio/vídeo em todo tipo de NAT.
 
 Você pode abrir uma conversa privada enquanto continua na call de um grupo. Uma faixa indica a chamada ativa e oferece **Ver chamada**, microfone, câmera e **Sair da voz**. Voltar para Amigos não desconecta a chamada. Uma nova abertura do programa sempre começa sem call.
 
-O histórico privado conserva até 200 mensagens por conversa, com limite global de 2.000 mensagens e 128 MB em anexos privados. Mensagens e anexos mais antigos são removidos ao atingir esses limites.
+O histórico privado conserva até 200 mensagens por conversa, com limite global de 2.000 mensagens e 128 MB em anexos privados. Conteúdo já entregue mais antigo é removido ao atingir os limites; envios e alterações ainda pendentes são protegidos, com limite próprio para não crescer indefinidamente.
 
 ## Criar e entrar no grupo
 
@@ -56,17 +74,19 @@ O histórico privado conserva até 200 mensagens por conversa, com limite global
 4. O amigo clica no link para abrir o programa e entrar, ou usa **Entrar em um grupo** e cola o convite.
 5. Depois que o grupo existe, **Convidar amigos** copia o convite em um clique.
 
-O criador precisa manter o programa aberto. Se o Windows perguntar, permita o String Chat no Firewall para a rede usada pelo Radmin. Não é necessário desativar o Firewall nem contratar hospedagem.
+No P2P, o criador precisa manter o programa aberto. Se o Windows perguntar, permita o String Chat no Firewall para a rede usada pelo Radmin. Não é necessário desativar o Firewall nem contratar hospedagem. O grupo hospedado continua no servidor quando o criador sai.
 
 ## Canais e chamada
 
 - Clique em um **canal de texto** para abrir o chat na área principal.
 - Clique em um **canal de voz** para entrar e expandir a call e as transmissões desse canal.
 - O criador pode adicionar canais nos botões **+** das listas de texto e voz.
-- O botão de desligar a call sai **só da voz**: você continua no grupo e pode conversar por texto.
-- **Sair do grupo** fica abaixo do nome do grupo. Se o criador sair, o grupo fica indisponível até ele abri-lo novamente.
+- O botão de desligar a call sai **só da voz** em um grupo: você continua por texto. Numa chamada privada, ele encerra a chamada inteira.
+- **Sair do grupo** fica abaixo do nome do grupo. No P2P, se o criador sair, o grupo fica indisponível até ele abri-lo novamente. Grupos hospedados permanecem no servidor.
+- **Gerenciar grupo** oferece categorias, canais, cargos, permissões e membros conforme suas permissões. Canais podem ter descrição, modo lento e regras de leitura/envio/reação/conexão por cargo.
+- Administradores podem mover, silenciar, impedir escuta, aplicar timeout, expulsar ou banir membros respeitando a hierarquia. Um mute administrativo não pode ser removido pelo botão local do participante.
 
-Os canais têm áudio separado. Quem está em outro canal de voz não recebe o microfone ou a tela do seu canal. Até seis pessoas podem estar no grupo, com até 24 canais.
+Os canais têm áudio separado. Quem está em outro canal de voz não recebe o microfone ou a tela do seu canal. O P2P admite até seis pessoas por grupo, com até 24 canais. O serviço hospedado tem limites maiores para texto e até seis pessoas por canal de voz.
 
 ## Webcam e foto de perfil
 
@@ -96,13 +116,13 @@ As imagens aparecem sem moldura. Clique na imagem para abrir a visualização am
 - Também pode arrastar um arquivo para o chat ou colar uma imagem com **Ctrl+V**.
 - O botão **Salvar** de um anexo permite escolher onde guardá-lo.
 
-O histórico recente fica no computador do criador: até 200 mensagens e 128 MB de anexos por grupo. Os GIFs são enviados como arquivo; não há busca em catálogo externo.
+No P2P, o histórico recente fica no computador do criador: até 200 mensagens e 128 MB de anexos por grupo. No modo hospedado, fica no servidor sob limites de armazenamento definidos pelo administrador. Os GIFs são enviados como arquivo; não há busca em catálogo externo.
 
 ## Amigos
 
 Abra **Amigos** na barra esquerda. Copie **Meu código de amigo** e envie, ou cole o código recebido para enviar um pedido. A outra pessoa aceita o pedido no mesmo painel.
 
-Os amigos ficam salvos. O painel mostra online/offline e permite **Convidar** para o seu grupo ou **Entrar** no grupo de um amigo online. Os dois precisam estar no programa e com conectividade pela rede Radmin/LAN. O status pode levar alguns segundos para atualizar.
+Os amigos ficam salvos. O painel mostra presença/status e permite **Convidar** para o seu grupo. Em P2P, **Entrar** usa o grupo compartilhado por um amigo online; os dois precisam de conectividade pela rede Radmin/LAN. No servidor opcional, use o diretório e os convites de grupo nas conversas. O status pode levar alguns segundos para atualizar.
 
 ## Sons e microfone
 
@@ -112,13 +132,13 @@ A supressão **RNNoise neural local** continua disponível, com cancelamento de 
 
 ## Limites da conexão
 
-O programa usa a interface Radmin/LAN escolhida e não precisa de um serviço hospedado na internet. O computador que criou o grupo coordena os canais, convites, texto e arquivos; a mídia usa WebRTC entre os participantes.
+No P2P, o programa usa a interface Radmin/LAN escolhida e o criador coordena canais, convites, texto e arquivos. No modo hospedado, o servidor assume essa coordenação. A mídia usa WebRTC entre os participantes em ambos os modos.
 
 FPS e bitrate reais dependem da rede e do hardware. A 25 Mbps para três amigos, reserve até 75 Mbps de upload mais áudio e protocolos. Consulte **Estatísticas** para ver os valores reais.
 
 ## Atualizar o programa
 
-Execute **StringChat-Setup-1.7.0.exe** em todos os PCs para usar os novos controles. O perfil, a foto e a lista de amigos são mantidos. Novos convites de grupo e códigos de amigo começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
+Execute **StringChat-Setup-1.8.0.exe** em todos os PCs. O perfil, a foto e o histórico são mantidos. Amizades antigas sem identidade verificada precisam trocar novos códigos e confirmar novamente. Convites e códigos começam com **stringchat://**. Não apague os dados do aplicativo para atualizar.
 
 
 ## Voz e conversas na versão 1.6

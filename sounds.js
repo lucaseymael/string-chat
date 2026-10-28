@@ -1,7 +1,7 @@
 export class AppSounds {
   constructor(preferences){this.preferences=preferences;this.context=null;this.lastMessage=0;}
   play(kind){
-    const settings=this.preferences();if(settings.soundsEnabled===false)return;
+    const settings=this.preferences();if(settings.soundsEnabled===false||kind==='message'&&settings.doNotDisturb)return;
     if(kind==='message'&&Date.now()-this.lastMessage<400)return;
     if(kind==='message')this.lastMessage=Date.now();
     try{

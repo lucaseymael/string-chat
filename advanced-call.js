@@ -11,13 +11,13 @@ export class AdvancedCall {
   }
   nativeState(value) {
     this.lastNative=performance.now();if(!value.down)this.requireRelease=false;
-    const down=value.down===true&&!this.requireRelease&&this.settings.voiceInputMode==='ptt'&&this.call.active&&!!this.call.voiceChannelId&&!this.call.deafened;
+    const down=value.down===true&&!this.requireRelease&&this.settings.voiceInputMode==='ptt'&&this.call.active&&!!this.call.voiceChannelId&&!this.call.effectiveDeafened;
     this.call.setPushToTalk(down);this.getMicrophone()?.setPushToTalk(down,800);
   }
   observe() {
     const key=this.call.active&&this.call.voiceChannelId?`${this.call.id}:${this.call.voiceChannelId}:${this.settings.voiceInputMode}`:'';
     if(key===this.armKey)return;this.armKey=key;this.requireRelease=true;this.call.setPushToTalk(false);this.getMicrophone()?.setPushToTalk(false);
-    if(key&&this.settings.voiceInputMode==='ptt'&&!this.call.deafened){this.call.micOn=true;
+    if(key&&this.settings.voiceInputMode==='ptt'&&!this.call.effectiveDeafened){this.call.micOn=true;
       this.ensureMicrophone().then(mic=>{if(this.armKey!==key)return;const remaining=Math.max(0,800-(performance.now()-this.lastNative));mic.setPushToTalk(this.call.pttDown,remaining);this.call.announce();}).catch(e=>{this.call.micOn=false;this.call.announce();this.toast(e.message,true);});
     }
   }
@@ -34,7 +34,7 @@ export class AdvancedCall {
   voice(element,id,muted) { this.mixer.apply(element,'voice',id,this.callExtras.pan(id),muted); }
   tile(tile,item) {
     if(item.self||item.kind!=='screen')return;
-    const video=tile.querySelector('video');if(item.audio)this.mixer.apply(video,'screen',item.id,0,this.call.deafened);else this.mixer.remove(video);
+    const video=tile.querySelector('video');if(item.audio)this.mixer.apply(video,'screen',item.id,0,this.call.effectiveDeafened);else this.mixer.remove(video);
     let record=this.tiles.get(tile);
     if(!record){
       record={video,item,delay:new VideoDelay(video,tile),lastFrame:performance.now(),lastRecovery:0,retries:0};this.tiles.set(tile,record);
@@ -56,9 +56,9 @@ export class AdvancedCall {
     const now=performance.now(),mic=this.getMicrophone(),t=mic?.telemetry;
     if(this.settings.voiceInputMode==='ptt'&&now-this.lastNative>800){this.call.setPushToTalk(false);mic?.setPushToTalk(false);}
     const audibleSpeech=this.callExtras.speaking()||!!(this.call.meta.mic&&t?.speaking);
-    this.mixer.tick(audibleSpeech,this.call.deafened);
+    this.mixer.tick(audibleSpeech,this.call.effectiveDeafened);
     for(const node of this.mixer.nodes.values())if(node.kind==='voice')this.mixer.position(node,this.callExtras.pan(node.id));
-    const warning=this.settings.warnMuted&&this.settings.voiceInputMode!=='ptt'&&this.call.active&&this.call.voiceChannelId&&!this.call.micOn&&!this.call.deafened&&mic?.live&&mic.context.state==='running'&&now-(mic.telemetryUpdated||0)<1000&&t&&t.inputDb>Math.max(-45,t.thresholdDb)&&(t.probability===null||t.probability>0.6);
+    const warning=this.settings.warnMuted&&this.settings.voiceInputMode!=='ptt'&&this.call.active&&this.call.voiceChannelId&&!this.call.micOn&&!this.call.effectiveDeafened&&mic?.live&&mic.context.state==='running'&&now-(mic.telemetryUpdated||0)<1000&&t&&t.inputDb>Math.max(-45,t.thresholdDb)&&(t.probability===null||t.probability>0.6);
     if(warning){this.speechSince ||= now;if(now-this.speechSince>650&&now-this.lastMutedWarning>15000){this.lastMutedWarning=now;this.toast('Você está falando com o microfone mutado.');this.sounds.play('message');}}else this.speechSince=0;
     for(const[tile,record]of this.tiles){
       if(!tile.isConnected){record.delay.close();record.video.cancelVideoFrameCallback(record.callback);this.tiles.delete(tile);continue;}

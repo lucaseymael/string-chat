@@ -1,3 +1,10 @@
+import {setupGroupManagement} from './group-management-ui.js';
+import {setupHostedSettings} from './hosted-settings-ui.js';
+import {setupHostedGroups} from './hosted-groups-ui.js';
+import {setupPrivateCallUI} from './private-call-ui.js';
+import {setupNotificationSettings} from './notifications-ui.js';
+import {setupMessageTools} from './message-ui.js';
+import {canInGroup,memberDisplay} from './group-view.js';
 import { MeshCall, iceConfig } from './rtc.js';
 import {normalizeAdvancedSettings} from './advanced-settings.js';
 import {setupAdvancedUI} from './advanced-ui.js';
@@ -20,6 +27,7 @@ const defaults = { name: 'Você', bitrate: 25, fps: 60, resolution: 1080, conten
 let stored = {};
 try { stored = window.stringChat?.readSettings() || JSON.parse(localStorage.getItem('stringchat-settings') || '{}') || {}; } catch { /* Storage may be disabled. */ }
 const settings = {
+  notificationsEnabled:stored.notificationsEnabled===true,notificationPreview:stored.notificationPreview!==false,
   ...defaults,...normalizeAdvancedSettings(stored),...normalizeVoiceSettings(stored),voicePreferences:typeof stored.voicePreferences==='string'?stored.voicePreferences:'{}',closeToTray:stored.closeToTray===true,theme:stored.theme==='light'?'light':'dark',muteShortcut:typeof stored.muteShortcut==='string'?stored.muteShortcut:'Control+Shift+M',deafenShortcut:typeof stored.deafenShortcut==='string'?stored.deafenShortcut:'Control+Shift+D', avatar:cleanAvatar(stored.avatar),cameraDeviceId:typeof stored.cameraDeviceId==='string'?stored.cameraDeviceId:'', name: typeof stored.name === 'string' ? stored.name.slice(0, 32) || 'Você' : defaults.name,
   bitrate: Number.isFinite(stored.bitrate) ? Math.min(50, Math.max(8, stored.bitrate)) : 25,
   fps: stored.fps === 30 ? 30 : 60, resolution: stored.resolution === 720 ? 720 : 1080,
@@ -34,6 +42,7 @@ const settings = {
 const call = new MeshCall(settings);
 const callPeople=document.createElement('div');callPeople.className='call-people';callPeople.hidden=true;$('screen-stage').insertBefore(callPeople,document.querySelector('.stage-footnote'));
 const sounds=new AppSounds(()=>settings);
+window.stringChat.onFriends(snapshot=>{settings.doNotDisturb=snapshot.presence?.status==='dnd';settings.selfPresence=snapshot.presence;if(home&&!call.active)render();});
 document.addEventListener('click',event=>{if(event.target.closest('button')&&!event.target.closest('button').disabled)sounds.play('click');});
 let viewMode='home',home=null,shortcutUI=null,groupWasActive=false;
 const tiles = new Map(), audioElements = new Map();
@@ -76,8 +85,17 @@ document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('c
 
 const voiceUI=setupVoiceUI({settings,getMicrophone:()=>microphone,error:e=>toast(userError(e),true)});
 const callExtras=setupCallExtras({call,settings,audioElements,toast,onAudioChange:renderStreams});
+const notificationUI=setupNotificationSettings();
+const hostedSettings=setupHostedSettings({toast});
+const hostedGroups=setupHostedGroups({toast,isHomeVisible:()=>viewMode==='home'&&!$('home-friends-page').hidden,onEnter:async id=>{if(call.active)throw Error('Saia da chamada ou grupo atual antes de entrar em outro.');call.externalSignal=true;try{await window.stringChat.enterHostedGroup({id});}catch(error){call.externalSignal=false;render();throw error;}}});
+window.stringChat.hostedStatus().then(status=>hostedGroups.setConnected(status.connected)).catch(()=>{});
 const advancedUI=setupAdvancedUI({settings,error:e=>toast(userError(e),true)});
 const advanced=new AdvancedCall({call,settings,getMicrophone:()=>microphone,ensureMicrophone,callExtras,toast,sounds});
+const groupManager=setupGroupManagement({call,toast,getMembers:()=>call.members});
+const groupAction=(m,action,extra={})=>window.stringChat.groupMessageAction({action,id:m.id,channelId:m.channelId,expectedRevision:m.revision||0,...extra});
+const groupTools=setupMessageTools({list:$('messages'),input:$('chat-input'),form:$('chat-form'),getMessages:()=>channelMessages.get(selectedTextChannel)||[],getSelf:()=>call.id,toast,
+ onEdit:(m,text)=>groupAction(m,'edit',{text}),onDelete:m=>groupAction(m,'delete'),onReact:(m,emoji,enabled)=>groupAction(m,'reaction',{emoji,enabled}),onPin:(m,enabled)=>groupAction(m,'pin',{enabled}),onTyping:active=>call.active?window.stringChat.groupTyping({channelId:selectedTextChannel,active}):false,
+ canDelete:m=>m.authorId===call.id||canInGroup(call.room,call.id,'manageMessages'),canPin:()=>canInGroup(call.room,call.id,'manageMessages')});
 
 function participantMarkup(member, self = false, status = '') {
   return `<div class="participant-card${self ? ' self' : ''}" data-member="${safe(member.id)}"><span class="participant-mic">${voiceStateMarkup(member)}</span><span class="avatar">${avatarContent(member,safe)}</span><div class="participant-name">${safe(member.name)}${self ? ' <span>(você)</span>' : ''}</div><span class="participant-status">${safe(status || (getVoiceState(member).label + (member.screen ? ' · Compartilhando tela' : '')))}</span></div>`;
@@ -85,33 +103,35 @@ function participantMarkup(member, self = false, status = '') {
 function render() {
   if(pageClosing)return;
   if(!call.active){cameraProcessor?.close();cameraProcessor=null;pendingCameraProcessor?.close();}
-  window.stringChat.updateTray({inCall:call.active&&!!call.voiceChannelId,mic:call.meta.mic,deafened:call.deafened});
+  window.stringChat.updateTray({inCall:call.active&&!!call.voiceChannelId,mic:call.meta.mic,deafened:call.effectiveDeafened});
   const name = call.meta.name;
   $('self-name').textContent = name; $('self-avatar').innerHTML = avatarContent(call.meta,safe);
-  $('self-status').textContent = !call.active ? 'Disponível' : getVoiceState(call.meta).label;
+  $('self-status').textContent = !call.active ? ({online:'Disponível',idle:'Ausente',dnd:'Não perturbe',invisible:'Invisível'}[settings.selfPresence?.status]||'Disponível') : getVoiceState(call.meta).label;
   const voice=call.room?.channels?.find(c=>c.id===call.voiceChannelId);
   $('room-title').textContent = viewMode==='text'?`# ${call.room?.channels?.find(c=>c.id===selectedTextChannel)?.name||'geral'}`:voice?.name || (call.active?'Escolha um canal de voz':'Seu grupo');
   $('group-title').textContent=call.room?.name||'Seu grupo, sua galera.';
-  $('group-subtitle').textContent=call.active?`${1+call.peers.size} pessoas no grupo`:'Crie um grupo ou entre por convite.';
-  $('leave-group-button').hidden=!call.externalSignal;
+  $('group-subtitle').textContent=call.active?`${call.members.length} pessoas no grupo`:'Crie um grupo ou entre por convite.';
+  $('leave-group-button').hidden=!call.externalSignal||call.room?.kind==='direct';
+  document.querySelector('.app').classList.toggle('private-call-view',call.room?.kind==='direct');$('invite-button').hidden=call.room?.kind==='direct';
   $('participant-count').textContent = String(1 + call.connected.filter(p=>p.meta.voiceChannelId===call.voiceChannelId).length).padStart(2, '0');
   const members = [...call.peers.values()].filter(p => (p.admitted || p.pc.connectionState !== 'new' && p.pc.signalingState === 'stable') && (!call.externalSignal || p.meta.voiceChannelId===call.voiceChannelId));
   $('participants').innerHTML = participantMarkup(call.meta, true) + members.map(peer => participantMarkup({ ...peer.meta, id: peer.id, name: peer.name }, false, peer.admitted ? '' : 'Conectando…')).join('') + `<button class="participant-card participant-invite" id="participant-invite"><span class="invite-plus">${icon('plus')}</span>Tem lugar pra mais um.</button>`;
+  if(call.room?.kind==='direct')$('participant-invite').hidden=true;
   $('participant-invite')?.addEventListener('click', () => openConnect('invite'));
   if(!call.active){$('participants').replaceChildren();$('participant-count').textContent='00';}
   renderGroupChannels();
-  document.querySelectorAll('[data-member]').forEach(node => { const avatar = node.querySelector('.avatar'); avatar.style.backgroundColor = colorFor(node.dataset.member); });
+  document.querySelectorAll('[data-member]').forEach(node => { const avatar = node.querySelector('.avatar'); if(avatar)avatar.style.backgroundColor = colorFor(node.dataset.member); });
   $('quality-resolution').innerHTML = `${settings.resolution}<span>p</span>`;
   $('quality-fps').textContent = `${settings.fps} FPS`; $('quality-bitrate').textContent = `${settings.bitrate} Mbps`;
   $('mic-button').innerHTML = icon(call.meta.mic ? 'mic' : 'mic-off');
   $('mic-button').setAttribute('aria-pressed', String(call.meta.mic));
   $('mic-button').setAttribute('aria-label', call.micOn ? 'Desligar microfone' : 'Ligar microfone');
   $('mic-button').title = `${call.micOn ? 'Desligar' : 'Ligar'} microfone${settings.muteShortcut?' ('+settings.muteShortcut.replaceAll('Control','Ctrl').replaceAll('Super','Win')+')':''}`;
-  $('deafen-button').innerHTML=icon(call.deafened?'headphones-off':'headphones');
-  $('deafen-button').classList.toggle('voice-deafened',call.deafened);
-  $('deafen-button').setAttribute('aria-pressed', String(call.deafened));
-  $('deafen-button').setAttribute('aria-label', call.deafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido');
-  $('deafen-button').title = (call.deafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido')+(settings.deafenShortcut?' ('+settings.deafenShortcut.replaceAll('Control','Ctrl').replaceAll('Super','Win')+')':'');
+  $('deafen-button').innerHTML=icon(call.effectiveDeafened?'headphones-off':'headphones');
+  $('deafen-button').classList.toggle('voice-deafened',call.effectiveDeafened);
+  $('deafen-button').setAttribute('aria-pressed', String(call.effectiveDeafened));
+  $('deafen-button').setAttribute('aria-label', call.effectiveDeafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido');
+  $('deafen-button').title = (call.effectiveDeafened ? 'Reativar áudio recebido' : 'Silenciar áudio recebido')+(settings.deafenShortcut?' ('+settings.deafenShortcut.replaceAll('Control','Ctrl').replaceAll('Super','Win')+')':'');
   $('camera-button').classList.toggle('camera-on',!!call.camera);
   $('camera-button').setAttribute('aria-pressed',String(!!call.camera));
   $('camera-button').setAttribute('aria-label',call.camera?'Desligar câmera':'Ligar câmera');
@@ -126,17 +146,18 @@ function render() {
   const screenCount = (call.screen ? 1 : 0) + call.connected.filter(p => p.meta.screen).length;
   $('stage-state').textContent = screenCount ? `${screenCount === 1 ? 'TRANSMISSÃO' : 'TRANSMISSÕES'} AO VIVO` : call.connected.length ? 'BOA COMPANHIA, CONEXÃO DIRETA' : 'SEU ESPAÇO, SEM LIMITES';
   $('leave-button').disabled = !call.active && !call.mic && !call.screen && !call.camera;
-  renderStreams(); callExtras.controls();advanced.observe(); updateDuration();
-  home?.updateSession({active:call.active,group:call.room?.name,voice:voice?.name,mic:call.meta.mic,deafened:call.deafened});
+  renderStreams(); callExtras.controls();advanced.observe();groupManager.render();updateDuration();
+  home?.updateSession({active:call.active,group:call.room?.name,voice:voice?.name,mic:call.meta.mic,deafened:call.effectiveDeafened});
   $('room-nav').classList.toggle('selected',call.active&&viewMode!=='home');$('home-button').classList.toggle('selected',viewMode==='home');
   $('toggle-chat').hidden=viewMode==='home';$('invite-button').innerHTML=icon('plus')+(call.active?'Convidar amigos':'Criar grupo');
 }
 function renderGroupChannels() {
   const channels=call.active?call.room?.channels||[]:[];
+  const allowed=new Set(channels.map(c=>c.id));for(const id of channelMessages.keys())if(!allowed.has(id))channelMessages.delete(id);
   if(!call.active){$('text-channels').replaceChildren();$('voice-channels').replaceChildren();return;}
   if(!channels.some(c=>c.id===selectedTextChannel&&c.kind==='text')){selectedTextChannel=channels.find(c=>c.kind==='text')?.id||'text-geral';call.textChannelId=selectedTextChannel;renderChatChannel();}
   $('text-channels').innerHTML=channels.filter(c=>c.kind==='text').map(c=>`<button class="channel group-channel ${c.id===selectedTextChannel?'active':''}" data-text-channel="${safe(c.id)}"><span class="hash-mark">#</span><span>${safe(c.name)}</span>${channelUnread.get(c.id)?`<small class="unread-count">${Math.min(99,channelUnread.get(c.id))}</small>`:''}</button>`).join('');
-  const people=[call.meta,...[...call.peers.values()].map(p=>({...p.meta,id:p.id,name:p.name}))];
+  const people=call.members;
   $('voice-channels').innerHTML=channels.filter(c=>c.kind==='voice').map(c=>`<button class="channel group-channel ${c.id===call.voiceChannelId?'active':''}" data-voice-channel="${safe(c.id)}">${icon('headphones')}<span>${safe(c.name)}</span><small>${people.filter(p=>p.voiceChannelId===c.id).length}</small></button><div class="channel-members">${people.filter(p=>p.voiceChannelId===c.id).map(p=>`<div class="sidebar-person" data-voice-member="${safe(p.id)}"><span class="avatar">${avatarContent(p,safe)}</span><span>${safe(p.name)}</span>${voiceStateMarkup(p)}</div>`).join('')}</div>`).join('');
   document.querySelectorAll('[data-text-channel]').forEach(button=>button.onclick=()=>{selectedTextChannel=button.dataset.textChannel;channelUnread.delete(selectedTextChannel);call.textChannelId=selectedTextChannel;renderChatChannel();setViewMode('text');render();});
   document.querySelectorAll('[data-voice-channel]').forEach(button=>button.onclick=async()=>{try{if(button.dataset.voiceChannel!==call.voiceChannelId)await call.changeVoiceChannel(button.dataset.voiceChannel);setViewMode('voice');render();}catch(error){toast(userError(error),true);}});
@@ -171,7 +192,7 @@ function renderStreams() {
         const element = document.createElement('audio'); element.autoplay = true; element.hidden = true;
         document.body.append(element); audioElements.set(peer.id, element);
       }
-      const element = audioElements.get(peer.id),localMuted=callExtras.audio(peer.id,element); element.muted=true;setMedia(element,[mic]);advanced.voice(element,peer.id,call.deafened||!sameVoice||localMuted);
+      const element = audioElements.get(peer.id),localMuted=callExtras.audio(peer.id,element),policy=call.policyFor(peer.id); element.muted=true;setMedia(element,[mic]);advanced.voice(element,peer.id,call.effectiveDeafened||!sameVoice||localMuted||policy.serverMuted||policy.serverDeafened);
     }
   }
   for (const [id, element] of audioElements) if (!call.peers.has(id)) { element.srcObject = null; element.remove(); audioElements.delete(id); }
@@ -187,7 +208,7 @@ function renderStreams() {
       tiles.set(item.id, tile); $('streams').append(tile);
     }
     const tile = tiles.get(item.id), video = tile.querySelector('video');
-    if(item.kind==='screen'){const hasAudio=item.self?!!call.screenAudio:!!item.audio;let status=tile.querySelector('.stream-audio-status');if(!status){status=document.createElement('span');status.className='stream-audio-status';tile.querySelector('.stream-label').insertBefore(status,tile.querySelector('.stream-fullscreen'));}const sourceVolume=item.self?settings.screenVolume:call.peers.get(item.id)?.meta.screenAudioVolume;status.textContent=hasAudio?(sourceVolume===0?'Volume enviado em 0%':!item.self&&call.deafened?'Áudio recebido silenciado':!item.self&&streamVolumes.get(item.id)===0?'Transmissão silenciada':item.self?'Som dos apps ativo':'Som ativo'):'Sem áudio da tela';status.classList.toggle('audio-missing',!hasAudio);status.title=hasAudio?'Áudio da transmissão separado das vozes':item.self?lastAudioError||'Ative o som ou clique em Recuperar áudio.':'Quem transmite precisa ativar ou recuperar o som.';if(item.self){let retry=tile.querySelector('.recover-screen-audio');if(!retry){retry=document.createElement('button');retry.className='button small recover-screen-audio';retry.textContent='Recuperar áudio';retry.onclick=()=>recoverScreenAudio(true);tile.querySelector('.stream-label').insertBefore(retry,tile.querySelector('.stream-fullscreen'));}retry.hidden=hasAudio;}}
+    if(item.kind==='screen'){const hasAudio=item.self?!!call.screenAudio:!!item.audio;let status=tile.querySelector('.stream-audio-status');if(!status){status=document.createElement('span');status.className='stream-audio-status';tile.querySelector('.stream-label').insertBefore(status,tile.querySelector('.stream-fullscreen'));}const sourceVolume=item.self?settings.screenVolume:call.peers.get(item.id)?.meta.screenAudioVolume;status.textContent=hasAudio?(sourceVolume===0?'Volume enviado em 0%':!item.self&&call.effectiveDeafened?'Áudio recebido silenciado':!item.self&&streamVolumes.get(item.id)===0?'Transmissão silenciada':item.self?'Som dos apps ativo':'Som ativo'):'Sem áudio da tela';status.classList.toggle('audio-missing',!hasAudio);status.title=hasAudio?'Áudio da transmissão separado das vozes':item.self?lastAudioError||'Ative o som ou clique em Recuperar áudio.':'Quem transmite precisa ativar ou recuperar o som.';if(item.self){let retry=tile.querySelector('.recover-screen-audio');if(!retry){retry=document.createElement('button');retry.className='button small recover-screen-audio';retry.textContent='Recuperar áudio';retry.onclick=()=>recoverScreenAudio(true);tile.querySelector('.stream-label').insertBefore(retry,tile.querySelector('.stream-fullscreen'));}retry.hidden=hasAudio;}}
     video.muted = true;video.classList.toggle('camera-preview',item.self&&item.kind==='camera');
     video.volume=(streamVolumes.get(item.id)??100)/100;
     tile.querySelector('.stream-label>span').textContent = item.name;
@@ -215,7 +236,7 @@ function updateDuration() {
 }
 function addMessage(message) {
   const channelId=message.channelId||selectedTextChannel;let list=channelMessages.get(channelId);if(!list){list=[];channelMessages.set(channelId,list);}
-  if(list.some(item=>item.id===message.id))return;list.push(message);if(list.length>200)list.shift();
+  const existing=list.findIndex(item=>item.id===message.id);if(existing>=0){if((message.revision||0)>(list[existing].revision||0)){list[existing]=message;if(channelId===selectedTextChannel)renderChatChannel(false);}return;}list.push(message);if(list.length>200)list.shift();
   if(!message.self&&!message.history&&(channelId!==selectedTextChannel||viewMode!=='text'||!document.hasFocus())){channelUnread.set(channelId,(channelUnread.get(channelId)||0)+1);renderGroupChannels();}
   if(channelId===selectedTextChannel)appendMessage(message);
   if(!message.self&&!message.history)sounds.play('message');
@@ -227,7 +248,7 @@ function appendMessage(message) {
   const time = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(message.time);
   node.innerHTML = `<span class="avatar">${avatarContent(messagePerson(message),safe)}</span><div><div class="message-heading"><strong>${safe(message.name)}${message.self ? ' (você)' : ''}</strong><time>${time}</time></div><p>${safe(message.text)}</p></div>`;
   if(message.attachment){const attachment=message.attachment;const card=document.createElement('div');card.className='message-attachment';card.dataset.attachmentId=attachment.id;card.dataset.mime=attachment.mime;const imageTypes=['image/png','image/jpeg','image/webp','image/gif'];card.dataset.image=String(imageTypes.includes(attachment.mime));if(imageTypes.includes(attachment.mime)){const placeholder=document.createElement('span');placeholder.className='attachment-preview';placeholder.textContent=attachment.mime==='image/gif'?'Carregando GIF…':'Carregando imagem…';card.append(placeholder);}const footer=document.createElement('div');footer.className='attachment-caption';const name=document.createElement('span');name.textContent=`${attachment.name} · ${(attachment.size/1024).toFixed(0)} KB`;const save=document.createElement('button');save.className='text-button';save.textContent='Salvar';save.onclick=()=>window.stringChat.saveAttachment(attachment.id).catch(error=>toast(userError(error),true));footer.append(name,save);card.append(footer);node.lastElementChild.append(card);attachmentObserver.observe(card);}
-  $('messages').append(node); trimMessages(); if(follow)$('messages').scrollTop = $('messages').scrollHeight;
+  groupTools.decorate(node,message);$('messages').append(node); trimMessages(); if(follow)$('messages').scrollTop = $('messages').scrollHeight;
   if (!message.self && !chatVisible) $('toggle-chat').title = 'Nova mensagem na conversa';
 }
 function systemMessage(text) {
@@ -237,7 +258,7 @@ function systemMessage(text) {
 }
 function trimMessages() { while ($('messages').children.length > 300) $('messages').firstElementChild.remove(); }
 const emptyChat = $('messages').innerHTML;
-function renderChatChannel() { $('messages').innerHTML=emptyChat;hasMessages=false;for(const item of channelMessages.get(selectedTextChannel)||[])appendMessage(item);const channel=call.room?.channels?.find(c=>c.id===selectedTextChannel);document.querySelector('.chat-header h2').textContent=`# ${channel?.name||'geral'}`; }
+function renderChatChannel(resetTools=true) { if(resetTools)groupTools.reset();$('messages').innerHTML=emptyChat;hasMessages=false;for(const item of channelMessages.get(selectedTextChannel)||[])appendMessage(item);const channel=call.room?.channels?.find(c=>c.id===selectedTextChannel);document.querySelector('.chat-header h2').textContent=`# ${channel?.name||'geral'}`; }
 function resetChat() { channelMessages.clear();channelUnread.clear();renderChatChannel();$('chat-input').value=''; }
 async function hydrateAttachment(card){
   if(card.dataset.image!=='true')return;const id=card.dataset.attachmentId;
@@ -258,7 +279,7 @@ async function toggleMic() {
   const epoch = sessionEpoch;
   try {
     if (call.mic && call.mic.readyState === 'live') {
-      call.micOn = !call.micOn; if (call.micOn && call.deafened) call.deafened = false;
+      call.micOn = !call.micOn; if (call.micOn && call.effectiveDeafened) call.deafened = false;
       call.announce(); return;
     }
     const processor = await ensureMicrophone();
@@ -293,7 +314,7 @@ function updateMicStatus() {
   $('mic-processing-status').textContent = microphone?.live ? (microphone.context.state === 'running' ? labels[microphone.mode] || 'Iniciando filtro…' : 'Áudio suspenso pelo navegador') : 'O processamento acontece só no seu PC.';
   $('mic-test-button').innerHTML = icon('headphones') + (microphone?.monitoring ? 'Parar teste' : 'Ouvir teste');
 }
-function toggleDeafen() { call.deafened = !call.deafened; call.announce(); toast(call.deafened ? 'Áudio recebido silenciado e microfone pausado.' : 'Áudio recebido reativado.'); }
+function toggleDeafen(){if(call.ownPolicy.serverDeafened){toast('A moderação desativou sua escuta.');return;}call.deafened=!call.deafened;call.announce();toast(call.effectiveDeafened?'Áudio recebido silenciado e microfone pausado.':'Áudio recebido reativado.');}
 
 async function applyCaptureConstraints(track) {
   const width = settings.resolution === 1080 ? 1920 : 1280;
@@ -367,7 +388,7 @@ async function toggleFullscreen(element) {
   catch (error) { toast(userError(error), true); }
 }
 
-async function refreshNetworks(){const list=await window.stringChat.getNetworkInterfaces();$('room-network').replaceChildren();for(const item of list){const o=document.createElement('option');o.value=item.address;o.textContent=`${item.kind==='radmin'?'Radmin VPN':item.name} · ${item.address}`;$('room-network').append(o);}$('network-tip').textContent=list.some(x=>x.kind==='radmin')?'Radmin detectado. Os amigos devem estar na mesma rede do Radmin.':'Ligue o Radmin e atualize a lista, ou escolha uma rede LAN compartilhada.';}
+async function refreshNetworks(){const list=await window.stringChat.getNetworkInterfaces();$('room-network').replaceChildren();for(const item of list){const o=document.createElement('option');o.value=item.address;o.textContent=item.kind==='hosted'?'Servidor próprio · grupo sempre disponível':`${item.kind==='radmin'?'Radmin VPN':item.name} · ${item.address}`;$('room-network').append(o);}$('network-tip').textContent=list.some(x=>x.kind==='hosted')?'Escolha P2P pela rede local/VPN ou um grupo no seu servidor.':list.some(x=>x.kind==='radmin')?'Radmin detectado. Os amigos devem estar na mesma rede do Radmin.':'Ligue o Radmin e atualize a lista, ou escolha uma rede LAN compartilhada.';}
 async function openConnect(tab){if(tab==='invite'&&call.networkInfo?.invite){await copyText(call.networkInfo.invite);return;}$('connect-error').textContent='';setConnectTab(tab);showDialog('connect-dialog');if(tab==='invite'){try{await refreshNetworks();}catch(e){$('connect-error').textContent=userError(e);}}else if(!$('group-invite-input').value){try{const value=await navigator.clipboard.readText();if(/^(stringchat):\/\/join/.test(value.trim()))$('group-invite-input').value=value.trim();}catch{}}}
 function setConnectTab(tab){$('invite-pane').hidden=tab!=='invite';$('join-pane').hidden=tab!=='join';$('invite-tab').classList.toggle('active',tab==='invite');$('join-tab').classList.toggle('active',tab==='join');}
 async function connectAction(id,action){if(connectingBusy)return;connectingBusy=true;const b=$(id),previous=b.innerHTML;b.textContent='Conectando…';for(const key of ['generate-invite','join-group-button','invite-tab','join-tab'])$(key).disabled=true;$('connect-error').textContent='';try{await action();}catch(e){$('connect-error').textContent=userError(e);}finally{b.innerHTML=previous;for(const key of ['generate-invite','join-group-button','invite-tab','join-tab'])$(key).disabled=false;connectingBusy=false;render();}}
@@ -387,7 +408,7 @@ window.stringChat?.onInvite(async invite=>{if(call.active){toast('Você já est�
 setupFriends({toast,sounds,openConversation:id=>home?.openConversation(id),joinInvite:async invite=>{if(call.active){toast('Saia do grupo atual antes de entrar em outro.');return;}$('group-invite-input').value=invite;setConnectTab('join');showDialog('connect-dialog');await connectAction('join-group-button',async()=>{resetChat();await call.joinNetwork(invite);$('connect-dialog').close();});}});
 
 function openSettings() {
-  voiceUI.render();advancedUI.render();
+  voiceUI.render();advancedUI.render();notificationUI.render(settings);
   $('theme-choice').value=settings.theme;$('close-to-tray').checked=settings.closeToTray;
   shortcutUI?.render();
   draftAvatar=settings.avatar;renderProfilePreview();refreshCameraDevices().catch(()=>{});
@@ -411,7 +432,7 @@ document.querySelectorAll('[data-bitrate]').forEach(button => button.addEventLis
 $('network-mode').addEventListener('change', () => { $('custom-ice-fields').hidden = $('network-mode').value !== 'custom'; });
 $('settings-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const next = { ...voiceUI.read(),...advancedUI.read(),avatar:draftAvatar,cameraDeviceId:$('camera-device').value,name: $('display-name').value.trim().slice(0, 32) || 'Você', resolution: Number($('resolution').value), fps: Number($('framerate').value), bitrate: Number($('bitrate').value), contentHint: $('content-hint').value, noiseMode: $('noise-mode').value, echoCancellation: $('echo-cancellation').checked, screenSound: $('screen-sound').checked, network: $('network-mode').value, iceUrl: $('ice-url').value.trim(), iceUser: $('ice-user').value, icePassword: $('ice-password').value };
+  const next = { ...voiceUI.read(),...advancedUI.read(),...notificationUI.read(),avatar:draftAvatar,cameraDeviceId:$('camera-device').value,name: $('display-name').value.trim().slice(0, 32) || 'Você', resolution: Number($('resolution').value), fps: Number($('framerate').value), bitrate: Number($('bitrate').value), contentHint: $('content-hint').value, noiseMode: $('noise-mode').value, echoCancellation: $('echo-cancellation').checked, screenSound: $('screen-sound').checked, network: $('network-mode').value, iceUrl: $('ice-url').value.trim(), iceUser: $('ice-user').value, icePassword: $('ice-password').value };
   next.closeToTray=$('close-to-tray').checked;next.theme=$('theme-choice').value;next.streamPriority=$('stream-priority').value;next.screenVolume=Number($('screen-volume').value);next.soundsEnabled=$('sounds-enabled').checked;next.soundVolume=Number($('sound-volume').value);
   try {
     iceConfig(next);await advanced.applySettings(next);
@@ -457,11 +478,10 @@ $('settings-dialog').addEventListener('close', async () => {
 function setChatVisible(value) { chatVisible = value; $('chat-panel').hidden = !value; $('toggle-chat').setAttribute('aria-pressed', String(value)); $('toggle-chat').title = value ? 'Ocultar conversa' : 'Mostrar conversa'; }
 $('toggle-chat').addEventListener('click', () => setChatVisible(!chatVisible));
 smallScreen.addEventListener('change', event => setChatVisible(!event.matches));
-$('chat-form').addEventListener('submit', event => {
-  event.preventDefault(); const input = $('chat-input'); if (!input.value.trim()) return;
-  if (Date.now() - lastChat < 80) return;
-  try { if (call.sendChat(input.value)) { input.value = ''; lastChat = Date.now(); } }
-  catch (error) { toast(userError(error), true); }
+let chatSending=false;
+$('chat-form').addEventListener('submit',async event=>{
+ event.preventDefault();const input=$('chat-input'),text=input.value.trim();if(!text||chatSending)return;
+ chatSending=true;try{if(call.externalSignal)await window.stringChat.sendGroupChat({channelId:selectedTextChannel,text,replyTo:groupTools.replyId()});else if(!call.sendChat(text))return;if(input.value.trim()===text)input.value='';groupTools.sent();lastChat=Date.now();}catch(error){toast(userError(error),true);}finally{chatSending=false;}
 });
 $('camera-button').addEventListener('click',toggleCamera);
 $('mic-button').addEventListener('click', toggleMic); $('deafen-button').addEventListener('click', toggleDeafen);
@@ -477,6 +497,7 @@ function openLeaveGroup() {
 $('leave-group-button').onclick=openLeaveGroup;
 $('leave-button').addEventListener('click',async()=>{
   const returnHome=viewMode==='home';
+  if(call.room?.kind==='direct'){await window.stringChat.privateCallEnd({callId:call.room.id});if(call.active){sessionEpoch++;call.leave();cleanupSession();}return;}
   if(call.externalSignal&&call.voiceChannelId){await stopSharing();await stopCamera();await call.changeVoiceChannel(null);call.micOn=false;microphone?.close();microphone=null;await call.updateTracks({mic:null});setViewMode(returnHome?'home':'text');sounds.play('leave');toast('Você saiu da voz e continua no grupo.');render();}
   else openLeaveGroup();
 });
@@ -503,6 +524,8 @@ window.addEventListener('pagehide', () => {pageClosing=true;call.leave();});
 call.addEventListener('change',()=>{if(call.active&&!groupWasActive)setViewMode('voice');else if(!call.active&&groupWasActive)setViewMode('home');groupWasActive=call.active;render();refreshMessageAvatars();});
 call.addEventListener('tracks', renderStreams);
 call.addEventListener('chat', event => addMessage(event.detail));
+call.addEventListener('message-updated',event=>addMessage(event.detail));
+call.addEventListener('typing',event=>{if(event.detail.channelId===selectedTextChannel)groupTools.typing({id:event.detail.memberId,name:event.detail.name,active:event.detail.active});});
 call.addEventListener('memberjoined', event => {
   if(call.connected.some(peer=>peer.name===event.detail&&peer.meta.voiceChannelId===call.voiceChannelId))sounds.play('join');
   toast(`${event.detail} conectou à sala.`); systemMessage(`${event.detail} chegou.`);
@@ -510,6 +533,7 @@ call.addEventListener('memberjoined', event => {
 });
 call.addEventListener('memberleft', event => {systemMessage(event.detail);sounds.play('leave');});
 call.addEventListener('voice-sound',event=>sounds.play(event.detail));
+call.addEventListener('voice-changed',event=>{if(event.detail.before&&event.detail.before!==event.detail.channelId){stopSharing();stopCamera();if(!event.detail.channelId){call.micOn=false;microphone?.close();microphone=null;call.updateTracks({mic:null});}}});
 call.addEventListener('error', event => toast(event.detail, true));
 call.addEventListener('ended', event => { sessionEpoch++; cleanupSession(); toast(event.detail, true); });
 call.addEventListener('peerremoved', () => renderStreams());
@@ -625,6 +649,21 @@ $('image-viewer').addEventListener('close',()=>{viewerEpoch++;viewerId=null;view
 
 // Start in the personal space; a group opens only after an explicit create/join.
 home=setupHome({toast,sounds,getSelf:()=>call.meta,onHome:()=>{setViewMode('home');render();},onCreate:()=>openConnect('invite'),onJoin:()=>openConnect('join'),onGroup:()=>{if(call.active){setViewMode(call.voiceChannelId?'voice':'text');render();}},onCallControl:kind=>$(kind==='leave'?'leave-button':kind==='camera'?'camera-button':kind==='deafen'?'deafen-button':'mic-button').click(),openImage:openImageViewer});
+window.stringChat.onNotification(target=>{if(target.kind==='direct')home.openConversation(target.id);else if(call.active&&call.room.channels.some(c=>c.id===target.id)){selectedTextChannel=target.id;call.textChannelId=target.id;renderChatChannel();setViewMode('text');render();}});
+let privateMediaCall=null;
+const privateUI=setupPrivateCallUI({getSelectedFriend:()=>home.getSelectedFriend(),toast,onPhase:async event=>{
+ if(event.phase==='incoming'||event.phase==='outgoing'){if(!event.silent)sounds.play('join');return;}
+ if(event.phase==='connecting'){call.externalSignal=true;return;}
+ if(event.phase==='active'){
+   call.externalSignal=true;setViewMode('voice');render();
+   if(privateMediaCall!==event.callId){privateMediaCall=event.callId;call.micOn=true;try{await ensureMicrophone();call.announce();if(event.mode==='video'&&!call.camera)await toggleCamera();}catch(error){toast(userError(error),true);}}
+ }else if(event.phase==='ended'){
+   if(call.room?.kind==='direct'){sessionEpoch++;call.leave();cleanupSession();}
+   else if(!call.active)call.externalSignal=false;
+   if(!event.silent)sounds.play('leave');privateMediaCall=null;
+ }
+}});
+window.stringChat.privateCallSnapshot().then(value=>{if(value)privateUI.handleEvent(value);}).catch(()=>{});
 $('home-button').onclick=()=>home.showFriends();document.querySelector('.brand').addEventListener('click',event=>{event.preventDefault();home.showFriends();});render();
 
 function watchSystemAudio(instance,screen){instance.addEventListener('error',event=>{if(systemAudio!==instance||call.screen!==screen)return;lastAudioError=event.detail;systemAudio=null;screenAudioLabel='';call.updateTracks({screenAudio:null});instance.stop();if(audioFailures<2){audioFailures++;clearTimeout(audioRecovery);audioRecovery=setTimeout(()=>recoverScreenAudio(false),700);}else toast('O som da tela foi interrompido. Clique em Recuperar áudio.',true);});}

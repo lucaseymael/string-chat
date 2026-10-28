@@ -1,14 +1,17 @@
 # Recursos e arquitetura — String Chat
 
-String Chat é um aplicativo desktop para conversar, reunir amigos e compartilhar telas pela LAN ou rede virtual privada. A identidade visual, os sons e os controles são próprios do projeto.
+String Chat é um aplicativo desktop para conversar, reunir amigos e compartilhar telas por P2P ou com servidor próprio opcional. A identidade visual, os sons e os controles são próprios do projeto. Esta tabela descreve o escopo implementado; não é uma promessa de equivalência total com outra plataforma.
 
 ## Recursos disponíveis
 
 | Área | Recursos |
 | --- | --- |
-| Espaço pessoal | Amigos, pedidos de amizade, presença e mensagens privadas sem entrar em grupo |
+| Espaço pessoal | Amigos, pedidos de amizade, presença personalizada, bloqueio, busca privada e mensagens sem entrar em grupo |
 | Grupos | Convites reutilizáveis, canais de texto e voz, até seis participantes |
-| Conversas | Texto, imagens, GIFs, emojis, arquivos de até 8 MB, busca no histórico e não lidas |
+| Conversas | Texto formatado, imagens, GIFs, emojis, arquivos de até 8 MB, busca, não lidas, respostas, edição/exclusão, reações, fixação e digitação |
+| Administração | Categorias, cargos, permissões por canal, modo lento, apelidos, timeout, mover, expulsar, banir e controle administrativo de mute/escuta |
+| Chamadas privadas | Toque, aceite, recusa, cancelamento e sala de duas identidades sem alterar os grupos salvos |
+| Servidor próprio | HTTPS, diretório de amigos, filas privadas cifradas offline, confirmação do destinatário e grupos sempre disponíveis |
 | Voz | RNNoise local, cancelamento de eco, ganho, limitador, sensibilidade e redução de graves |
 | Controles | Mute do mic, silenciar toda a escuta, estados visíveis e atalhos globais |
 | Entrada e saída | Seleção de microfone, troca de saída e teste local do microfone |
@@ -31,8 +34,10 @@ O áudio de aplicativos é capturado pelo loopback por processo do Windows, excl
 
 O computador que cria o grupo coordena os canais, convites e histórico recente. A mídia usa WebRTC entre participantes. Cada espectador exige upload do transmissor. Conexão direta depende de conectividade LAN/Radmin e das permissões do Firewall.
 
-O histórico de DMs é local e os dois participantes precisam estar online e alcançáveis para entregar mensagens novas. Não há diretório público de usuários, entrega offline em servidor, grupos sempre disponíveis ou busca externa de GIFs nesta versão.
+No modo P2P, os dois participantes precisam estar online e alcançáveis para entregar DMs novas. No modo hospedado, o servidor encaminha envelopes cifrados e conserva grupos, permissões, histórico e anexos; as chaves privadas das contas ficam nos clientes. Dados de grupos são acessíveis ao administrador do servidor. A mídia permanece WebRTC entre participantes, com até seis pessoas por canal de voz. STUN/TURN externo pode ser necessário. Veja [hospedagem](HOSPEDAGEM.md).
+
+Ainda não há fóruns/threads, enquetes, eventos agendados, soundboard, bots/webhooks, catálogo externo de GIFs, aplicativos móveis ou sobreposição em jogos. Essas áreas exigem desenvolvimento e testes adicionais.
 
 FPS, bitrate e atraso reais dependem da captura, do conteúdo, do hardware e da rede. A supressão pode reduzir ruído, mas não garante separar outras pessoas falando ao fundo. Desfoque consome CPU e pode falhar nas bordas da segmentação.
 
-Veja [o guia](COMO-USAR.md), [as notas 1.7](NOTAS-1.7.0.md) e [os testes e seus limites](VERIFICACAO-1.7.md). Componentes externos e licenças estão em `vendor/THIRD-PARTY-LICENSES.txt`; a origem dos arquivos de segmentação está em `vendor/mediapipe/SOURCES.json`.
+Veja [o guia](COMO-USAR.md), [as notas 1.8](NOTAS-1.8.0.md) e [os testes e seus limites](VERIFICACAO-1.8.md). Componentes externos e licenças estão em `vendor/THIRD-PARTY-LICENSES.txt`; a origem dos arquivos de segmentação está em `vendor/mediapipe/SOURCES.json`.

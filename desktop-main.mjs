@@ -1,9 +1,13 @@
+import {PrivateCalls} from './private-calls.mjs';
+import {HostedIntegration} from './hosted-integration.mjs';
+import {RoomRouter} from './room-router.mjs';
+import {parseHostedInvite} from './hosted-room-client.mjs';
 import { KeyMonitor } from './key-monitor.mjs';
 import { normalizeAdvancedSettings } from './advanced-settings.js';
 import { powerMonitor } from 'electron';
 import { cleanVoicePreferences } from './call-extras.js';
 import { normalizeVoiceSettings } from './voice-dsp.js';
-import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, dialog, session, globalShortcut, Tray, nativeTheme } from 'electron';
+import { app, BrowserWindow, desktopCapturer, ipcMain, Menu, dialog, session, globalShortcut, Tray, nativeTheme, Notification, shell } from 'electron';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +23,7 @@ const isAppLink=value=>typeof value==='string'&&/^(stringchat):\/\//.test(value)
 let keyMonitor,shortcuts,tray,trayState={},hiddenToTray=false,trayNoticeShown=false,preparingUpdate=false,shuttingDown=false,shutdownCleaned=false;
 function showMainWindow(){if(!mainWindow||mainWindow.isDestroyed())return;hiddenToTray=false;if(mainWindow.isMinimized())mainWindow.restore();mainWindow.show();mainWindow.focus();}
 function refreshTray(){if(!tray||tray.isDestroyed())return;tray.setToolTip('String Chat'+(trayState.inCall?' · Em chamada':''));tray.setContextMenu(Menu.buildFromTemplate([{label:'Abrir String Chat',click:showMainWindow},{type:'separator'},{label:trayState.mic?'Mutar microfone':'Reativar microfone',enabled:!!trayState.inCall,click:()=>mainWindow?.webContents.send('shortcuts:trigger','mute')},{label:trayState.deafened?'Reativar áudio recebido':'Silenciar áudio recebido',enabled:!!trayState.inCall,click:()=>mainWindow?.webContents.send('shortcuts:trigger','deafen')},{type:'separator'},{label:'Sair do String Chat',click:()=>app.quit()}]));}
-let cameraAuthorized=false;
+let cameraAuthorized=false,privateCalls,hosted;
 
 const root = dirname(fileURLToPath(import.meta.url));
 app.setName('String Chat');
@@ -34,7 +38,7 @@ app.commandLine.appendSwitch('disable-features','WebRtcHideLocalIpsWithMdns');
 let mainWindow, pickerWindow, localServer, pendingCapture, settings = {}, preferencesPath, rooms, friends;
 let pendingInvite=process.argv.find(value=>isAppLink(value))||null;
 const sourceMap = new Map();
-function deliverLink(link){const url=new URL(link);if(url.hostname==='friend'){parseFriendLink(link);mainWindow.webContents.send('friends:link',link);}else{parseInvite(link);mainWindow.webContents.send('room:invite',link);}}
+function deliverLink(link){const url=new URL(link);if(url.hostname==='friend'){parseFriendLink(link);mainWindow.webContents.send('friends:link',link);}else{url.hostname==='server'?parseHostedInvite(link):parseInvite(link);mainWindow.webContents.send('room:invite',link);}}
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
 else if(process.argv.includes('--prepare-update')) app.quit();
@@ -63,13 +67,32 @@ async function start() {
   powerMonitor.on('suspend',()=>keyMonitor.suspend());powerMonitor.on('lock-screen',()=>keyMonitor.suspend());powerMonitor.on('resume',()=>keyMonitor.resume());powerMonitor.on('unlock-screen',()=>keyMonitor.resume());
   shortcuts.apply({mute:settings.muteShortcut??DEFAULT_SHORTCUTS.mute,deafen:settings.deafenShortcut??DEFAULT_SHORTCUTS.deafen});
   localServer = await startLocalServer({ desktopPid: process.pid });
-  rooms=new RoomService({statePath:join(app.getPath('userData'),'group.json')});
-  friends=new FriendsService({path:join(app.getPath('userData'),'friends.json'),getName:()=>settings.name||'Amigo',getAvatar:()=>cleanAvatar(settings.avatar),getGroup:()=>{const invite=rooms.info?.invite||rooms.currentInvite;return invite?{name:rooms.room?.name||'Grupo',invite}:null;}});
+  rooms=new RoomRouter({local:new RoomService({statePath:join(app.getPath('userData'),'group.json')})});
+  friends=new FriendsService({path:join(app.getPath('userData'),'friends.json'),getName:()=>settings.name||'Amigo',getAvatar:()=>cleanAvatar(settings.avatar),getGroup:()=>{if(rooms.room?.kind==='direct')return null;const invite=rooms.info?.invite||rooms.currentInvite;return invite?{name:rooms.room?.name||'Grupo',invite}:null;}});
+  const notificationIds=new Set();
+  function notifyMessage(title,text,target,id){
+    if(settings.notificationsEnabled!==true||friends.presence.status==='dnd'||mainWindow?.isFocused()||!Notification.isSupported()||notificationIds.has(id))return;
+    notificationIds.add(id);if(notificationIds.size>500)notificationIds.delete(notificationIds.values().next().value);
+    const notification=new Notification({title:String(title).slice(0,80),body:settings.notificationPreview===false?'Nova mensagem recebida':String(text||'Anexo recebido').slice(0,180),icon:join(root,'icon.png'),silent:true});
+    notification.on('click',()=>{showMainWindow();mainWindow?.webContents.send('notification:open',target);});notification.show();
+  }
   friends.on('change',snapshot=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('friends:change',snapshot);});
-  friends.on('direct-message',message=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('direct:message',message);});
+  friends.on('direct-message',message=>{if(message.authorId!==friends.id&&!message.event&&!message.silent)notifyMessage(friends.contacts.get(message.friendId)?.name||'Mensagem privada',message.text,{kind:'direct',id:message.friendId},'direct:'+message.id);if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('direct:message',message);});
   friends.on('notice',notice=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('friends:notice',notice);});
+  privateCalls=new PrivateCalls({
+    friends,rooms,getMember:()=>({id:friends.id,name:settings.name||'Você',avatar:settings.avatar,voiceChannelId:'voice-direct'}),
+    onEvent:event=>{
+      if(!mainWindow||mainWindow.isDestroyed())return;
+      mainWindow.webContents.send('private-call:event',event);
+      if(event.phase==='incoming'&&!event.silent&&settings.notificationsEnabled===true&&!mainWindow.isFocused()){
+        const notice=new Notification({title:'Chamada de '+event.name,body:event.mode==='video'?'Chamada privada de vídeo':'Chamada privada de voz',icon:join(root,'icon.png'),silent:true});notice.on('click',showMainWindow);notice.show();
+      }
+    }
+  });friends.privateCalls=privateCalls;
+  hosted=new HostedIntegration({path:join(app.getPath('userData'),'hosted-settings.json'),friends,rooms,privateCalls});
+  hosted.on('status',status=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('hosted:status',status);});await hosted.load();
   friends.start().catch(()=>{});
-  rooms.on('event',event=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('room:event',event);});
+  rooms.on('event',event=>{if(event.type==='chat'&&event.message.authorId!==friends.id)notifyMessage(event.message.name||'Mensagem no grupo',event.message.text,{kind:'group',id:event.message.channelId},'group:'+event.message.id);if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('room:event',event);});
   if(!profileArgument) app.setAsDefaultProtocolClient('stringchat');
   const origin = localServer.url;
   const sameOrigin = value => { try { return new URL(value).origin === origin; } catch { return false; } };
@@ -101,7 +124,7 @@ async function start() {
   ipcMain.on('identity:read',event=>{event.returnValue=trusted(event)?{id:friends.id}:null;});
   ipcMain.handle('preferences:save', async (event, value) => {
     if (!trusted(event) || !value || typeof value !== 'object') throw new Error('Preferências inválidas.');
-    const allowed = ['closeToTray','theme','name','muteShortcut','deafenShortcut', 'cameraDeviceId', 'bitrate', 'fps', 'resolution', 'contentHint', 'streamPriority', 'noiseMode', 'echoCancellation', 'screenSound','screenVolume','soundsEnabled','soundVolume', 'network', 'iceUrl', 'iceUser'];
+    const allowed = ['notificationsEnabled','notificationPreview','closeToTray','theme','name','muteShortcut','deafenShortcut', 'cameraDeviceId', 'bitrate', 'fps', 'resolution', 'contentHint', 'streamPriority', 'noiseMode', 'echoCancellation', 'screenSound','screenVolume','soundsEnabled','soundVolume', 'network', 'iceUrl', 'iceUser'];
     const nextSettings = Object.fromEntries(allowed.filter(key => typeof value[key] === 'string' || typeof value[key] === 'number' || typeof value[key] === 'boolean').map(key => [key, typeof value[key] === 'string' ? value[key].slice(0, 250) : value[key]]));
     Object.assign(nextSettings,normalizeVoiceSettings(value),normalizeAdvancedSettings(value));nextSettings.voicePreferences=JSON.stringify(cleanVoicePreferences(value.voicePreferences));
     const previous=settings;const oldShortcuts=shortcuts.current;
@@ -126,13 +149,17 @@ async function start() {
     const result=await dialog.showMessageBox(mainWindow,{type:'question',title:'Permitir webcam',message:'Permitir que o String Chat use sua câmera?',detail:'A webcam só é ligada pelo botão de câmera. A imagem é enviada às pessoas no seu canal de voz. Você pode desligar a qualquer momento.',buttons:['Permitir câmera','Cancelar'],defaultId:1,cancelId:1,noLink:true});
     cameraAuthorized=result.response===0;return cameraAuthorized;
   });
-  roomAction('room:interfaces',()=>listInterfaces());
+  roomAction('room:interfaces',()=>[...listInterfaces(),...(hosted.status().connected?[{kind:'hosted',name:'Servidor próprio',address:'hosted'}]:[])]);
   roomAction('room:create',value=>rooms.create(value));
   roomAction('room:join',value=>rooms.join(value));
   roomAction('room:signal',value=>rooms.signal(value));
-  roomAction('room:leave',()=>rooms.leave());
+  roomAction('room:leave',()=>{if(privateCalls.snapshot())privateCalls.end().catch(()=>{});rooms.leave();});
   roomAction('room:voice',value=>rooms.voice(value));
   roomAction('room:channel',value=>rooms.createChannel(value));
+  roomAction('room:manage',value=>rooms.manage(value));
+  roomAction('room:message-action',value=>rooms.messageAction(value));
+  roomAction('room:typing',value=>rooms.typing(value));
+  roomAction('room:media-state',value=>rooms.mediaState(value));
   roomAction('room:chat',value=>rooms.chat(value));
   roomAction('room:upload',value=>rooms.sendAttachment(value));
   roomAction('room:file',id=>rooms.getAttachment(id));
@@ -141,15 +168,40 @@ async function start() {
   roomAction('direct:read',id=>friends.direct.markRead(id));
   roomAction('direct:send',value=>friends.direct.sendText(value));
   roomAction('direct:retry',value=>friends.direct.retry(value));
+  roomAction('direct:edit',value=>friends.direct.edit(value));
+  roomAction('direct:delete',value=>friends.direct.remove(value));
+  roomAction('direct:react',value=>friends.direct.react(value));
+  roomAction('direct:pin',value=>friends.direct.pin(value));
+  roomAction('direct:typing',value=>friends.direct.typing(value));
+  roomAction('direct:pending',value=>friends.direct.pending(value));
+  roomAction('direct:retry-action',value=>friends.direct.retryAction(value));
   roomAction('direct:upload',value=>friends.direct.sendFile(value));
   roomAction('direct:file',value=>friends.direct.getFile(value));
   roomAction('direct:save-file',async value=>{const file=friends.direct.getFile(value);const result=await dialog.showSaveDialog(mainWindow,{title:'Salvar arquivo privado',defaultPath:file.name});if(!result.canceled&&result.filePath){await writeFile(result.filePath,file.data);return true;}return false;});
+  roomAction('private-call:start',value=>privateCalls.start(value));
+  roomAction('private-call:accept',value=>privateCalls.accept(value));
+  roomAction('private-call:decline',value=>privateCalls.decline(value));
+  roomAction('private-call:end',value=>privateCalls.end(value));
+  roomAction('private-call:snapshot',()=>privateCalls.snapshot());
   roomAction('friends:get',()=>friends.snapshot());
-  roomAction('friends:refresh',async()=>{if(!friends.server)await friends.start();await friends.refresh();return friends.snapshot();});
+  roomAction('friends:refresh',async()=>{if(!friends.server)await friends.start();await friends.refresh();if(hosted.client?.connected)await hosted.client.state();return friends.snapshot();});
   roomAction('friends:add',code=>friends.add(code));
-  roomAction('friends:accept',id=>friends.accept(id));
-  roomAction('friends:remove',id=>friends.remove(id));
-  roomAction('friends:invite',id=>friends.invite(id));
+  roomAction('friends:accept',id=>hosted.actionForContact('accept',id));
+  roomAction('friends:remove',id=>hosted.actionForContact('remove',id));
+  roomAction('friends:block',id=>hosted.actionForContact('block',id));
+  roomAction('friends:unblock',id=>hosted.actionForContact('unblock',id));
+  roomAction('friends:presence',value=>friends.setPresence(value));
+  roomAction('external:open',value=>{const url=new URL(String(value));if(!['https:','http:'].includes(url.protocol)||url.username||url.password)throw Error('Link indisponível.');return shell.openExternal(url.href);});
+  roomAction('friends:invite',id=>{if(friends.contacts.get(id)?.hostedServer){if(!rooms.info?.invite||rooms.room?.kind==='direct')throw Error('Entre em um grupo antes de convidar.');return friends.direct.sendText({friendId:id,text:rooms.info.invite});}return friends.invite(id);});
+  roomAction('room:open-invite',value=>{deliverLink(String(value));return true;});
+  roomAction('hosted:status',()=>hosted.status());
+  roomAction('hosted:connect',value=>hosted.connect(value));
+  roomAction('hosted:disconnect',()=>hosted.disconnect());
+  roomAction('hosted:directory',query=>hosted.directory(query));
+  roomAction('hosted:friend-action',value=>hosted.friendAction(value));
+  roomAction('hosted:groups',()=>rooms.list());
+  roomAction('hosted:enter-group',value=>rooms.enter(value?.id));
+  roomAction('hosted:choose-ca',async()=>{const result=await dialog.showOpenDialog(mainWindow,{title:'Certificado público do servidor',properties:['openFile'],filters:[{name:'Certificado PEM',extensions:['pem','crt','cer']}]});if(result.canceled||!result.filePaths[0])return hosted.status();return hosted.chooseCA(await readFile(result.filePaths[0],'utf8'));});
   ipcMain.handle('capture:sources', event => {
     if (!trusted(event, pickerWindow)) throw new Error('Seletor indisponível.');
     return [...sourceMap.values()].map(source => ({ id: source.id, name: source.name, screen: source.id.startsWith('screen:'), thumbnail: source.thumbnail.toDataURL(), icon: source.appIcon?.toDataURL() || null }));
@@ -167,7 +219,7 @@ async function start() {
   mainWindow.on('close',event=>{if(settings.closeToTray===true&&!shuttingDown&&tray&&!tray.isDestroyed()){event.preventDefault();hiddenToTray=true;mainWindow.hide();if(!trayNoticeShown){trayNoticeShown=true;tray.displayBalloon({title:'String Chat continua aberto',content:'O programa está na bandeja do Windows. Para encerrar, clique com o botão direito no ícone e escolha Sair.',iconType:'info'});}return;}shuttingDown=true;});
   mainWindow.once('ready-to-show', () => {if(!shuttingDown&&!hiddenToTray&&!mainWindow.isDestroyed())mainWindow.show();});
   mainWindow.webContents.setWebRTCIPHandlingPolicy('default');
-  mainWindow.webContents.once('did-finish-load',()=>{if(pendingInvite){try{deliverLink(pendingInvite);}catch{} pendingInvite=null;}});
+  mainWindow.webContents.once('did-finish-load',()=>{hosted.autoConnect().catch(()=>{});if(pendingInvite){try{deliverLink(pendingInvite);}catch{} pendingInvite=null;}});
   mainWindow.webContents.on('page-title-updated', event => { event.preventDefault(); mainWindow.setTitle('String Chat'); });
   mainWindow.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(origin + '/')) event.preventDefault(); });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -176,4 +228,4 @@ async function start() {
   await mainWindow.loadURL(origin + '/');
 }
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {shuttingDown=true;if(shutdownCleaned)return;shutdownCleaned=true;tray?.destroy();finishCapture(null);shortcuts?.close();keyMonitor?.stop();friends?.close();rooms?.leave();localServer?.close();});
+app.on('before-quit', () => {shuttingDown=true;if(shutdownCleaned)return;shutdownCleaned=true;tray?.destroy();finishCapture(null);shortcuts?.close();keyMonitor?.stop();privateCalls?.close();rooms?.leave();hosted?.close();friends?.close();localServer?.close();});

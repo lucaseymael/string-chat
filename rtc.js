@@ -80,14 +80,31 @@ export class MeshCall extends EventTarget {
     this.mic = null; this.screen = null; this.screenAudio = null; this.camera = null;
     this.pttDown=false;this.micOn = false; this.deafened = false; this.chatSeen = new Set();
     this.externalSignal = false; this.networkAddress = null; this.networkStatus = null; this.networkInfo = null; this.networkQueue = Promise.resolve(); this.recoveries = new Map();
-    this.voiceChannelId='voice-lobby';
+    this.voiceChannelId='voice-lobby';this.networkMembers=new Map();
     if (globalThis.window?.stringChat?.onRoomEvent) window.stringChat.onRoomEvent(event => {
       this.networkQueue = this.networkQueue.then(() => this.handleNetworkEvent(event)).catch(error => emit(this,'error',error.message));
     });
   }
+  get ownPolicy(){return this.networkMembers.get(this.id)||{};}
+  get effectiveDeafened(){return this.deafened||this.ownPolicy.serverDeafened===true;}
+  get members(){if(!this.externalSignal)return[this.meta,...this.connected.map(p=>({...p.meta,id:p.id,name:p.name}))];return[this.meta,...[...this.networkMembers.values()].filter(m=>m.id!==this.id).map(m=>({...this.peers.get(m.id)?.meta,...m,name:m.nickname||m.name}))];}
+  policyFor(id){return this.networkMembers.get(id)||{};}
+  updateMemberPolicy(member){if(!member||!idPattern.test(member.id))return;const previous=this.networkMembers.get(member.id);this.networkMembers.set(member.id,{...previous,...member});if(member.id===this.id&&member.voiceChannelId!==undefined){const before=this.voiceChannelId;this.voiceChannelId=member.voiceChannelId;if(before!==this.voiceChannelId)emit(this,'voice-changed',{before,channelId:this.voiceChannelId});}const peer=this.peers.get(member.id);if(peer){peer.meta=this.sanitizeMember({...peer.meta,id:member.id});peer.name=peer.meta.name;}}
+  async syncVoicePeers(){
+    if(!this.externalSignal)return;
+    const together=member=>!!this.voiceChannelId&&member.voiceChannelId===this.voiceChannelId;
+    for(const peer of[...this.peers.values()])if(!this.networkMembers.has(peer.id)||!together(this.networkMembers.get(peer.id)))this.dropPeer(peer.id);
+    for(const member of this.networkMembers.values()){
+      if(member.id===this.id||!together(member))continue;
+      if(this.peers.has(member.id)){await this.syncPeer(this.peers.get(member.id));continue;}
+      const initiator=this.id<member.id,peer=this.makePeer(member.id,member.nickname||member.name,initiator);peer.meta=this.sanitizeMember({...member,mic:false,screen:false,camera:false});
+      if(initiator){await this.syncPeer(peer);await peer.pc.setLocalDescription(await peer.pc.createOffer());this.route(member.id,{desc:peer.pc.localDescription.toJSON()});}
+    }
+    if(this.mic)this.mic.enabled=this.meta.mic;
+  }
   get active() { return !!this.room; }
   get connected() { return [...this.peers.values()].filter(p => p.channel?.readyState === 'open' && p.admitted); }
-  get meta() { return { id: this.id, name: cleanName(this.settings.name, 'Você'), mic: !!(this.mic && this.micOn && !this.deafened && (this.settings.voiceInputMode!=='ptt'||this.pttDown)), screen: !!this.screen, camera: !!this.camera, avatar: cleanAvatar(this.settings.avatar), screenAudio: !!this.screenAudio, screenAudioVolume:this.settings.screenVolume,screenAudioState:this.screenAudio?'active':this.settings.screenSound?'unavailable':'off', deafened: this.deafened,voiceChannelId:this.voiceChannelId }; }
+  get meta() { return { id: this.id, name: cleanName(this.settings.name, 'Você'), mic: !!(this.mic && this.micOn && !this.effectiveDeafened && !this.ownPolicy.serverMuted && (this.settings.voiceInputMode!=='ptt'||this.pttDown)), screen: !!this.screen, camera: !!this.camera, avatar: cleanAvatar(this.settings.avatar), screenAudio: !!this.screenAudio, screenAudioVolume:this.settings.screenVolume,screenAudioState:this.screenAudio?'active':this.settings.screenSound?'unavailable':'off', deafened: this.effectiveDeafened,serverMuted:!!this.ownPolicy.serverMuted,serverDeafened:!!this.ownPolicy.serverDeafened,voiceChannelId:this.voiceChannelId }; }
   startHost(name = 'Sala da galera') {
     if (this.active) return;
     this.isHost = true; this.hostId = this.id; this.room = { id: uid(), name: name.trim().slice(0, 40) || 'Sala da galera' };
@@ -108,34 +125,25 @@ export class MeshCall extends EventTarget {
   }
   async handleNetworkEvent(event) {
     if(!this.externalSignal) return;
-    if(event.type==='hosting') {
-      this.room=event.room; this.networkAddress=event.localAddress; this.networkInfo=event; this.settings.network='lan'; this.networkStatus='connected'; emit(this,'change'); return;
+    if(event.type==='hosting'){
+      this.room=event.room;this.isHost=true;this.hostId=event.hostId||this.id;this.startedAt ||= Date.now();this.networkAddress=event.hosted?null:event.localAddress;this.networkInfo=event;this.settings.network=event.hosted?(this.settings.network==='custom'?'custom':'internet'):'lan';this.networkStatus='connected';
+      const self=event.selfMember||{id:this.id,name:this.settings.name,voiceChannelId:this.room.kind==='direct'?'voice-lobby':this.voiceChannelId};this.updateMemberPolicy(self);for(const member of event.members||[])this.updateMemberPolicy(member);await this.syncVoicePeers();emit(this,'change');return;
     }
-    if(event.type==='welcome') {
-      this.networkAddress=event.localAddress; this.settings.network='lan'; this.networkStatus='connected';
-      if(event.selfVoiceChannelId!==undefined)this.voiceChannelId=event.selfVoiceChannelId;
-      this.room=event.room; this.hostId=event.hostId; this.isHost=false; this.startedAt ||= Date.now();
-      const present=new Set(event.members.map(m=>m.id));
-      for(const peer of [...this.peers.values()]) if(!present.has(peer.id)) this.dropPeer(peer.id);
-      for(const item of event.members) {
-        if(item.id===this.id || this.peers.has(item.id)) continue;
-        const peer=this.makePeer(item.id,item.name,true);
-        Object.assign(peer.meta,{voiceChannelId:item.voiceChannelId,avatar:cleanAvatar(item.avatar)});
-        await this.syncPeer(peer); await peer.pc.setLocalDescription(await peer.pc.createOffer()); this.route(peer.id,{desc:peer.pc.localDescription.toJSON()});
-      }
-      emit(this,'change'); emit(this,'network-joined'); return;
+    if(event.type==='welcome'){
+      this.networkAddress=event.hosted?null:event.localAddress;this.settings.network=event.hosted?(this.settings.network==='custom'?'custom':'internet'):'lan';this.networkStatus='connected';this.room=event.room;this.hostId=event.hostId;this.isHost=false;this.startedAt ||= Date.now();
+      const present=new Set([this.id,...event.members.map(m=>m.id)]);for(const id of this.networkMembers.keys())if(!present.has(id))this.networkMembers.delete(id);
+      this.updateMemberPolicy(event.selfMember||{id:this.id,name:this.settings.name,voiceChannelId:event.selfVoiceChannelId??null});for(const member of event.members)this.updateMemberPolicy(member);
+      await this.syncVoicePeers();emit(this,'change');emit(this,'network-joined');return;
     }
-    if(event.type==='member-added') {
-      if(event.member.id!==this.id && !this.peers.has(event.member.id)) Object.assign(this.makePeer(event.member.id,event.member.name,false).meta,{voiceChannelId:event.member.voiceChannelId,avatar:cleanAvatar(event.member.avatar)});
-      return;
-    }
-    if(event.type==='member-left') { this.dropPeer(event.id,`${event.name} saiu.`); return; }
-    if(event.type==='member-updated') {
-      if(event.member.id===this.id) this.voiceChannelId=event.member.voiceChannelId;
-      else {const peer=this.peers.get(event.member.id);if(peer){const before=peer.meta.voiceChannelId;peer.meta.voiceChannelId=event.member.voiceChannelId;peer.name=cleanName(event.member.name);peer.meta.avatar=cleanAvatar(event.member.avatar);await this.syncPeer(peer);if(before!==peer.meta.voiceChannelId){if(before===this.voiceChannelId)emit(this,'voice-sound','leave');if(peer.meta.voiceChannelId===this.voiceChannelId)emit(this,'voice-sound','join');}}}
-      emit(this,'change'); return;
-    }
+    if(event.type==='member-added'||event.type==='member-back'){this.updateMemberPolicy(event.member);await this.syncVoicePeers();emit(this,'change');return;}
+    if(event.type==='member-left') { this.networkMembers.delete(event.id);this.dropPeer(event.id,`${event.name} saiu.`); return; }
+    if(event.type==='member-updated'){this.updateMemberPolicy(event.member);await this.syncVoicePeers();if(this.mic)this.mic.enabled=this.meta.mic;this.announce();return;}
     if(event.type==='channels-updated') { if(this.room)this.room.channels=event.channels;emit(this,'change');return; }
+    if(event.type==='message-updated'){emit(this,'message-updated',{...event.message,self:event.message.authorId===this.id});return;}
+    if(event.type==='typing'){emit(this,'typing',event);return;}
+    if(event.type==='room-updated'){this.room=event.room;for(const member of event.members||[])this.updateMemberPolicy(member);await this.syncVoicePeers();emit(this,'change');return;}
+    if(event.type==='moderation-ended'){this.leave();emit(this,'ended',event.reason||'Você saiu da chamada por uma ação da moderação.');return;}
+    if(event.type==='invite-rotated'){if(this.networkInfo)this.networkInfo.invite=event.invite;emit(this,'change');return;}
     if(event.type==='chat') {const item=event.message;emit(this,'chat',{...item,self:item.authorId===this.id});return;}
     if(event.type==='history') {for(const item of event.messages)emit(this,'chat',{...item,self:item.authorId===this.id,history:true});return;}
     if(event.type==='member-back') {
@@ -281,6 +289,7 @@ export class MeshCall extends EventTarget {
       emit(this, 'change'); return;
     }
     if (!peer.admitted) return;
+    if(this.externalSignal&&['route','signal','roster','mesh-start'].includes(message.type))return;
     if(await handleMediaControl.call(this,peer,message))return;
     if (message.type === 'state') {
       if (message.member?.id !== peer.id) return;
@@ -329,7 +338,10 @@ export class MeshCall extends EventTarget {
     }
   }
   sanitizeMember(member) {
-    return { id: member.id, name: cleanName(member.name), mic: !!member.mic, screen: !!member.screen, camera: !!member.camera, avatar: cleanAvatar(member.avatar), screenAudio: !!member.screenAudio,screenAudioVolume:Number.isFinite(member.screenAudioVolume)?Math.max(0,Math.min(200,member.screenAudioVolume)):100,screenAudioState:['active','unavailable','off'].includes(member.screenAudioState)?member.screenAudioState:member.screenAudio?'active':'unavailable', deafened: !!member.deafened,voiceChannelId:member.voiceChannelId||null };
+    const policy=this.externalSignal?this.networkMembers.get(member.id):null;
+    const result={ id: member.id, name: cleanName(member.name), mic: !!member.mic, screen: !!member.screen, camera: !!member.camera, avatar: cleanAvatar(member.avatar), screenAudio: !!member.screenAudio,screenAudioVolume:Number.isFinite(member.screenAudioVolume)?Math.max(0,Math.min(200,member.screenAudioVolume)):100,screenAudioState:['active','unavailable','off'].includes(member.screenAudioState)?member.screenAudioState:member.screenAudio?'active':'unavailable', deafened: !!member.deafened,voiceChannelId:member.voiceChannelId||null };
+    if(this.externalSignal){result.voiceChannelId=policy?.voiceChannelId??null;result.serverMuted=!!policy?.serverMuted;result.serverDeafened=!!policy?.serverDeafened;if(policy){result.name=cleanName(policy.nickname||policy.name);result.avatar=cleanAvatar(policy.avatar);}if(result.serverMuted||result.serverDeafened)result.mic=false;if(result.serverDeafened)result.deafened=true;}
+    return result;
   }
   sendRoster() {
     if(this.externalSignal) return;
@@ -347,6 +359,7 @@ export class MeshCall extends EventTarget {
   }
   async receiveSignal(id, name, payload) {
     if (!payload || typeof payload !== 'object') return;
+    if(this.externalSignal&&(!this.voiceChannelId||this.networkMembers.get(id)?.voiceChannelId!==this.voiceChannelId))return;
     if (payload.desc && (!['offer', 'answer'].includes(payload.desc.type) || typeof payload.desc.sdp !== 'string' || payload.desc.sdp.length > 100000)) return;
     if (payload.candidate && (typeof payload.candidate.candidate !== 'string' || payload.candidate.candidate.length > 4096)) return;
     const peer = this.peers.get(id) || this.makePeer(id, name, false);
@@ -419,6 +432,7 @@ export class MeshCall extends EventTarget {
   }
   announce() {
     if (this.mic) this.mic.enabled = this.meta.mic;
+    if(this.externalSignal&&this.active&&window.stringChat.updateRoomMediaState){const value={mic:this.meta.mic,deafened:this.deafened,screen:this.meta.screen,camera:this.meta.camera,screenAudio:this.meta.screenAudio},key=JSON.stringify(value);if(key!==this.lastMediaState){this.lastMediaState=key;window.stringChat.updateRoomMediaState(value).catch(error=>emit(this,'error',error.message));}}
     this.broadcast({ type: 'state', member: this.meta }); this.sendRoster(); emit(this, 'change');
   }
   sendChat(text) {
@@ -474,7 +488,7 @@ export class MeshCall extends EventTarget {
     this.generation++; this.room = null; this.isHost = false; this.hostId = null; this.startedAt = null;
     for (const peer of [...this.peers.values()]) this.dropPeer(peer.id);
     for (const track of [this.mic, this.screen, this.screenAudio, this.camera]) track?.stop();
-    this.mic = this.screen = this.screenAudio = this.camera = null; this.pttDown=false;this.micOn = false; this.deafened = false; this.chatSeen.clear(); this.id = this.selfIdentity;
+    this.mic = this.screen = this.screenAudio = this.camera = null; this.networkMembers.clear();this.pttDown=false;this.micOn = false; this.deafened = false; this.chatSeen.clear(); this.id = this.selfIdentity;
     emit(this, 'change');
   }
   async readStats() {

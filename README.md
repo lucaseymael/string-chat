@@ -1,6 +1,6 @@
 # String Chat
 
-Aplicativo desktop para Windows: amigos, mensagens privadas, grupos com canais de voz e texto, webcam e compartilhamento de tela entre PCs na mesma LAN ou rede Radmin.
+Aplicativo desktop para Windows: amigos, mensagens privadas, grupos com canais de voz e texto, webcam e compartilhamento de tela. Use P2P pela LAN/Radmin ou conecte um servidor próprio opcional.
 
 Um espaço próprio para conversas e chamadas, com superfícies em azul e cinza, dois temas e controles que ficam fora do caminho da transmissão.
 
@@ -8,7 +8,7 @@ Um espaço próprio para conversas e chamadas, com superfícies em azul e cinza,
 
 ## Instalar
 
-Na página **Releases** deste repositório, baixe `StringChat-Setup-1.7.0.exe` e execute em todos os PCs. O setup inclui o runtime; quem usa o programa não precisa instalar Node.js. Atualizações são feitas executando o novo setup, que preserva o perfil e remove versões instaladas anteriores reconhecidas após concluir a instalação.
+Na página **Releases** deste repositório, baixe `StringChat-Setup-1.8.0.exe` e execute em todos os PCs. O setup inclui o runtime; quem usa o programa não precisa instalar Node.js. Atualizações são feitas executando o novo setup, que preserva o perfil e remove versões instaladas anteriores reconhecidas após concluir a instalação.
 
 `StringChat-Desktop.zip` é a alternativa portátil: extraia todos os arquivos juntos e abra `StringChat.exe`. Não há atualização automática pela internet nesta versão.
 
@@ -22,6 +22,11 @@ A [versão 1.7.0](docs/NOTAS-1.7.0.md) acrescenta PTT global, alerta de fala mut
 
 ## Recursos
 
+- Servidor HTTPS próprio opcional: diretório de amigos, entrega privada offline e grupos disponíveis sem o criador conectado. Veja [hospedagem](docs/HOSPEDAGEM.md).
+- Chamadas privadas de voz e vídeo com toque, aceite e acesso restrito aos dois amigos.
+- Respostas, edição, exclusão, reações, fixação e indicação de digitação nas conversas.
+- Categorias, cargos, permissões por canal, apelidos, expulsão, banimento, timeout e mute/escuta administrados pelo grupo.
+- Presença disponível/ausente/não perturbe/invisível, status personalizado, bloqueio e notificações desktop opcionais.
 - Amigos, pedidos de amizade e mensagens privadas sem entrar em grupo.
 - Grupos com canais de texto e voz, convites reutilizáveis e até 6 participantes.
 - Texto, imagens, GIFs, emojis e arquivos de até 8 MB; imagens podem ser ampliadas.
@@ -36,9 +41,11 @@ A [versão 1.7.0](docs/NOTAS-1.7.0.md) acrescenta PTT global, alerta de fala mut
 
 ## Rede e dados
 
-Não é necessário hospedar um serviço. Abra o Radmin antes do app e conecte todos à mesma rede virtual. O criador mantém o app aberto: seu PC coordena o grupo e armazena o histórico recente dele. A mídia usa WebRTC entre participantes; o upload necessário cresce com a quantidade de espectadores.
+O modo P2P não exige hospedagem. Abra o Radmin antes do app e conecte todos à mesma rede virtual. Nesse modo, o criador mantém o app aberto: seu PC coordena o grupo e armazena o histórico recente dele. No modo hospedado, o servidor mantém grupos, permissões, histórico e anexos disponíveis. A mídia usa WebRTC entre participantes em ambos os modos; o upload necessário cresce com a quantidade de espectadores. Redes externas podem exigir TURN separado.
 
-As mensagens privadas usam conexão e chave próprias de cada amizade. Os dois PCs precisam estar online e alcançáveis para entregar novas mensagens. Envios sem confirmação podem ser tentados novamente. O histórico é local e não recebe criptografia adicional em disco. Compartilhe convites e códigos de amizade somente com pessoas autorizadas.
+As mensagens privadas usam identidades assinadas e chaves X25519 próprias de cada amizade. Em P2P, os dois PCs precisam estar online e alcançáveis. No servidor opcional, envelopes cifrados aguardam o destinatário: **na fila** só vira **entregue** após uma confirmação autenticada do computador dele. Histórico local e arquivos de grupos no servidor não recebem criptografia adicional em disco. Proteja os perfis, dados do servidor e convites.
+
+Atualizem todos para 1.8.0: a autenticação de participantes e amizades foi reforçada. Contatos antigos sem identidade verificada conservam o histórico, mas precisam trocar novos códigos e confirmar a amizade antes de enviar ou ligar. Veja [novidades](docs/NOTAS-1.8.0.md) e [verificação](docs/VERIFICACAO-1.8.md).
 
 Perfis ficam em `%APPDATA%\StringChat`. Nenhum perfil, chave ou conversa é incluído neste repositório.
 
@@ -65,6 +72,8 @@ npm start
 
 `npm start` compila o auxiliar de áudio e abre o Electron na própria janela. O serviço HTTP local é interno ao programa.
 
+`npm run test:collaboration` verifica identidade, bloqueio, mensagens, permissões e consentimento de chamadas. `npm run test:hosted` verifica HTTPS, fila offline e grupos. Os testes HTTPS precisam de `keytool` no PATH ou da variável `STRINGCHAT_TEST_KEYTOOL`; criam certificados efêmeros, sem desativar a verificação TLS. `npm run test:collaboration-desktop` e `npm run test:hosted-desktop` verificam os fluxos em duas instâncias isoladas do aplicativo.
+
 ## Gerar instalador
 
 ```powershell
@@ -81,6 +90,7 @@ O workflow manual **Windows package** gera os mesmos arquivos como artefatos, se
 | `rtc.js`, `media-policy.js` | WebRTC, bitrate, codecs e sincronização |
 | `microphone.js`, `system-audio*.js` | Microfone, RNNoise e captura de som |
 | `room-service.mjs`, `friends-service.mjs`, `direct-messages.mjs` | Grupos, amizades e mensagens privadas |
+| `hosted-*.mjs`, `room-router.mjs`, `scripts/hosted-server.mjs` | Servidor HTTPS opcional, filas, diretório e grupos persistentes |
 | `native/` | Fontes C# da captura WASAPI, setup e launcher/desinstalador |
 | `vendor/` | RNNoise e licenças dos componentes terceiros |
 | `scripts/`, `tests/` | Compilação, empacotamento e verificações |

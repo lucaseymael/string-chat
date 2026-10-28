@@ -37,7 +37,7 @@ await rcedit(join(output, 'StringChat.exe'), {
   'version-string': { FileDescription: 'String Chat', ProductName: 'String Chat' },
 });
 await cp(join(root, 'docs/COMO-USAR.md'), join(output, 'COMO-USAR.md'));
-await writeFile(join(output, 'LEIA-ME.txt'), `String Chat ${pkg.version}\r\nAbra StringChat.exe e mantenha todos os arquivos desta pasta juntos.\r\nVeja COMO-USAR.md. O Radmin deve estar conectado antes de entrar em grupos.\r\n`);
+await writeFile(join(output, 'LEIA-ME.txt'), `String Chat ${pkg.version}\r\nAbra StringChat.exe e mantenha todos os arquivos desta pasta juntos.\r\nVeja COMO-USAR.md. Use P2P pela LAN/Radmin ou configure um servidor HTTPS próprio opcional.\r\n`);
 const files = [];
 async function walk(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {

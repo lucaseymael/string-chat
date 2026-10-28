@@ -64,7 +64,7 @@ export function setupHistorySearch(list, label) {
   function apply() {
     if (bar.parentNode !== list) list.prepend(bar);
     const query = normalize(input.value.trim()); let found = 0; const rows = list.querySelectorAll('.message');
-    for (const row of rows) { row.hidden = !!query && !normalize(row.textContent).includes(query); if (!row.hidden) found++; }
+    for (const row of rows) { row.hidden = !!query && !normalize(row.dataset.searchText??row.textContent).includes(query); if (!row.hidden) found++; }
     const message = query ? `${found}/${rows.length}` : '';
     if (count.textContent !== message) count.textContent = message;
   }

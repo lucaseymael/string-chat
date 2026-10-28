@@ -1,0 +1,5 @@
+export function setupNotificationSettings(){
+ const form=document.getElementById('settings-form'),section=document.createElement('section');section.className='voice-settings notification-settings';section.innerHTML='<h3>Notificações</h3><label class="voice-check"><input type="checkbox" id="desktop-notifications">Notificações do Windows quando o app está em segundo plano</label><label class="voice-check"><input type="checkbox" id="notification-preview">Mostrar texto da mensagem na notificação</label><p class="small-note">Não perturbe silencia alertas de mensagens. Sua presença pode ser alterada no painel Amigos.</p>';
+ form.querySelector('.dialog-actions')?.insertAdjacentElement('beforebegin',section)||form.append(section);
+ return{render(settings){document.getElementById('desktop-notifications').checked=settings.notificationsEnabled===true;document.getElementById('notification-preview').checked=settings.notificationPreview!==false;},read(){return{notificationsEnabled:document.getElementById('desktop-notifications').checked,notificationPreview:document.getElementById('notification-preview').checked};}};
+}

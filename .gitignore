@@ -18,6 +18,13 @@ credentials*
 preferences.json
 friends.json
 group.json
+hosted-settings.json
+hosted-client-*.json
+registration-token.txt
+state.json
+groups.json
+hosted-mail/
+hosted-groups/
 private-messages.json
 profile/
 profiles/
